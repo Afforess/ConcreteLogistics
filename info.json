@@ -1,0 +1,9 @@
+{
+  "name": "ConcreteLogistics",
+  "version": "@VERSION@",
+  "title": "ConcreteLogistics",
+  "author": "Afforess",
+  "homepage": "http://afforess.com",
+  "description": "Automagical Concrete Planning and Logistics",
+  "dependencies": ["base >= 0.12.11", "? color-coding"]
+}
