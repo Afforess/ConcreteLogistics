@@ -6,6 +6,7 @@ local l = logger.new_logger("main")
 
 script.on_event(defines.events.on_built_entity, function(event)
     if event.created_entity.name == "concrete-logistics" then
+        event.created_entity.backer_name = ""
         if not global.concrete_logistics_towers then global.concrete_logistics_towers = {} end
         local data = {logistics = event.created_entity, pending_concrete = {}, pending_entities = {}, entities = {}, pending_construction = {}, concrete_areas = {}}
         table.insert(data.pending_entities, {entity = event.created_entity, distance = 5})
@@ -89,8 +90,13 @@ function plan_concrete_for_entity(concrete_logistics, entity, distance)
     table.insert(concrete_logistics.concrete_areas, {entity = entity, area = concrete_area, concrete = "concrete"})
 end
 
+function max_pending_construction(concrete_logistics)
+    local max = concrete_logistics.logistics.logistic_network.all_construction_robots
+    return math.max(1, math.max(max / 2, max - 25))
+end
+
 function update_concrete_logistics(concrete_logistics)
-    if #concrete_logistics.pending_construction > 200 then
+    if #concrete_logistics.pending_construction >= max_pending_construction(concrete_logistics) then
         if game.tick % 300 == 0 then
             prevent_pending_construction_death(concrete_logistics)
         end

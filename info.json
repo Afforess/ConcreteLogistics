@@ -1,6 +1,6 @@
 {
   "name": "ConcreteLogistics",
-  "version": "@VERSION@",
+  "version": "{{VERSION}}",
   "title": "ConcreteLogistics",
   "author": "Afforess",
   "homepage": "http://afforess.com",
