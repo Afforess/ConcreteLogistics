@@ -1,12 +1,12 @@
 require "defines"
 
 local _M = {}
-local Logger = {prefix='misanthrope'}
+local Logger = {prefix='concrete_logistics'}
 Logger.__index = Logger
 
  -- tracks if the log file has ever been written to, for append vs replace in write_file
 local ever_written = false
-local debug = false
+local debug = true
 
 function Logger:log(str)
     local run_time_s = math.floor(game.tick/60)
