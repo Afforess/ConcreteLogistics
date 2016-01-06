@@ -52,13 +52,26 @@ function concrete_distance_for_entity(entity)
     return nil
 end
 
+function is_valid_tile_for_concrete(x, y, surface)
+    local adjacent = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
+    for _, tuple in pairs(adjacent) do
+        if surface.get_tile(x + tuple[1], y + tuple[2]).name == "water" then
+            return false
+        end
+    end
+    return true
+end
+
 function plan_concrete_for_entity(concrete_logistics, entity, distance)
     local surface = entity.surface
     local concrete_area = expand_area(entity_area(entity), distance.radius - 1)
     for x = concrete_area.left_top.x, concrete_area.right_bottom.x - 1, 1 do
         for y = concrete_area.left_top.y, concrete_area.right_bottom.y - 1, 1 do
-            if surface.get_tile(x, y).name ~= "concrete" and not tile_has_ghost(x, y, surface, concrete_logistics.logistics.force) then
-                table.insert(concrete_logistics.pending_concrete, {concrete = "concrete", position = {x = math.floor(x), y = math.floor(y)}})
+            local tile = surface.get_tile(x, y)
+            if tile.name ~= "concrete" and not tile_has_ghost(x, y, surface, concrete_logistics.logistics.force) then
+                if is_valid_tile_for_concrete(x, y, surface) then
+                    table.insert(concrete_logistics.pending_concrete, {concrete = "concrete", position = {x = math.floor(x), y = math.floor(y)}})
+                end
             end
         end
     end
@@ -202,7 +215,7 @@ end
 function dist_squared(pos_a, pos_b)
     local axbx = pos_a.x - pos_b.x
     local ayby = pos_a.y - pos_b.y
-    return axbx * axbx + ayby + ayby
+    return axbx * axbx + ayby * ayby
 end
 
 -- function: tile_has_ghost
