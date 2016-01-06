@@ -1,5 +1,4 @@
 require "defines"
-require 'libs/utils'
 require 'libs/concrete'
 
 local logger = require 'libs/logger'
@@ -19,7 +18,7 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
         local data = {logistics = event.created_entity, player_entities = {}, pending_concrete = {}, pending_entities = {}, entities = {}, pending_construction = {}, concrete_areas = {}}
         table.insert(data.pending_entities, {entity = event.created_entity, distance = concrete_distance_for_entity(event.created_entity) })
         table.insert(global.concrete_logistics_towers, data)
-        l:log("Concrete Logistics Tower created at " .. serpent.line(event.created_entity.position))
+        l:log("Concrete Logistics Hub created at " .. serpent.line(event.created_entity.position))
     elseif global.concrete_logistics_towers and concrete_distance_for_entity(event.created_entity) ~= nil then
         local force = event.created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
@@ -70,8 +69,12 @@ function plan_concrete_for_entity(concrete_logistics, entity, distance)
         if nearby_entity.name ~= "tile-ghost" and nearby_entity.name ~= "entity-ghost" then
             local dist = concrete_distance_for_entity(nearby_entity)
             if dist ~= nil and not in_concrete_logistics(concrete_logistics, nearby_entity) then
-                l:log("Concrete distance for entity " .. serpent.line(nearby_entity.name) .. " is " ..  serpent.line(dist))
-                table.insert(concrete_logistics.pending_entities, {entity = nearby_entity, distance = dist})
+                local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(nearby_entity.position)
+                if closest_cell ~= nil and closest_cell.is_in_construction_range(nearby_entity.position) then
+                    table.insert(concrete_logistics.pending_entities, {entity = nearby_entity, distance = dist})
+                else
+                    l:log("Entity " .. nearby_entity.name .. " at position " .. serpent.line(nearby_entity.position) .. " is out of range of the construction logistics network.")
+                end
             end
         end
     end
@@ -140,10 +143,15 @@ end
 
 function fulfill_construction_request(concrete_logistics)
     local concrete_request = table.remove(concrete_logistics.pending_concrete, 1)
-    local data = {name = "tile-ghost", position = concrete_request.position, force = concrete_logistics.logistics.force, inner_name = concrete_request.concrete}
-    local tile_ghost = concrete_logistics.logistics.surface.create_entity(data)
-    if tile_ghost ~= nil then
-        table.insert(concrete_logistics.pending_construction, tile_ghost)
+    local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(concrete_request.position)
+    if closest_cell ~= nil and closest_cell.is_in_construction_range(concrete_request.position) then
+        local data = {name = "tile-ghost", position = concrete_request.position, force = concrete_logistics.logistics.force, inner_name = concrete_request.concrete}
+        local tile_ghost = concrete_logistics.logistics.surface.create_entity(data)
+        if tile_ghost ~= nil then
+            table.insert(concrete_logistics.pending_construction, tile_ghost)
+        end
+    else
+        l:log("No logistics cell closest to position at " .. serpent.line(concrete_request.position))
     end
 end
 
@@ -154,7 +162,7 @@ function warn_no_construction_bots(concrete_logistics)
     local force = concrete_logistics.logistics.force
     for _, player in pairs(game.players) do
         if player.valid and player.connected and player.force == force then
-            player.print("No construction bots within a concrete logistics tower network!")
+            player.print("No construction bots within a concrete logistics hub network!")
         end
     end
 end
