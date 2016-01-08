@@ -1,5 +1,6 @@
-require "defines"
+require 'defines'
 require 'libs/concrete'
+require 'libs/linked_list'
 
 local logger = require 'libs/logger'
 local l = logger.new_logger("main")
@@ -7,6 +8,7 @@ local l = logger.new_logger("main")
 script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity}, function(event)
     if event.created_entity.name == "concrete-logistics" then
         event.created_entity.backer_name = ""
+        
         if not global.concrete_logistics_towers then global.concrete_logistics_towers = {} end
         -- logistics: the logistics tower entity
         -- player_entities: list of entities recently constructed by player (or player bots), may or may not be in logistics concrete area, will be calculated eventually
@@ -14,21 +16,34 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
         -- pending_entities: list containing entities to be examined for pending concrete requests
         -- entities: list of examined entities that had concrete areas managed by the logistics tower
         -- pending_construction: list tile_ghost entities that are pending arrival of a construction bot
-        local data = {logistics = event.created_entity, player_entities = {}, pending_concrete = {}, pending_entities = {}, entities = {}, pending_construction = {}}
-        table.insert(data.pending_entities, event.created_entity)
+        local data = {logistics = event.created_entity, player_entities = linked_list.new(), pending_concrete = linked_list.new(), pending_entities = linked_list.new(), entities = linked_list.new(), pending_construction = linked_list.new()}
+        linked_list.append(data.pending_entities, event.created_entity)
         table.insert(global.concrete_logistics_towers, data)
         l:log("Concrete Logistics Hub created at " .. serpent.line(event.created_entity.position))
     elseif global.concrete_logistics_towers and concrete_data_for_entity(event.created_entity) ~= nil then
         local force = event.created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
             if concrete_logistics.logistics.force == force then
-                table.insert(concrete_logistics.player_entities, event.created_entity)
+                linked_list.append(concrete_logistics.player_entities, event.created_entity)
             end
         end
     end
 end)
 
 script.on_event(defines.events.on_tick, function(event)
+    if game.tick % 600 == 0 then
+        global.foo = {bar = {}, buz = {}}
+        local table = global.foo.bar
+        for i = 1, 195 do
+            table[i] = {}
+            table = table[i]
+        end
+        table = global.foo.buz
+        for i = 1, 195 do
+            table[i + 1] = {}
+            table = table[i + 1]
+        end
+    end
     if global.concrete_logistics_towers then 
         for i = #global.concrete_logistics_towers, 1, -1 do
             local data = global.concrete_logistics_towers[i]
@@ -61,9 +76,13 @@ function get_tile_name(x, y, surface, force, concrete_logistics)
     end
     local tx = math.floor(x)
     local ty = math.floor(y)
-    for index, data in pairs(concrete_logistics.pending_concrete) do
+    
+    local iter = linked_list.iterator(concrete_logistics.pending_concrete)
+    while(iter.has_next()) do
+        local node = iter.next_node()
+        local data = node.value
         if data.position.x == tx and data.position.y == ty then
-            return {name = data.concrete, pending_concrete_index = index}
+            return {name = data.concrete, pending_concrete_node = node}
         end
     end
     return {name = surface.get_tile(x, y).name}
@@ -93,13 +112,13 @@ function make_request_for_concrete_tile(x, y, surface, force, concrete_logistics
     if tile_name.tile_ghost ~= nil then
         local new_tile_ghost = surface.create_entity({name = "tile-ghost", position = position, force = force, inner_name = expected_tile_name})
         if new_tile_ghost ~= nil then
-            table.insert(concrete_logistics.pending_construction, new_tile_ghost)
+            linked_list.append(concrete_logistics.pending_construction, new_tile_ghost)
         end
         tile_name.tile_ghost.destroy()
-    elseif tile_name.pending_concrete_index ~= nil then
-        concrete_logistics.pending_concrete[tile_name.pending_concrete_index] = {concrete = expected_tile_name, position = position}
+    elseif tile_name.pending_concrete_node ~= nil then
+        pending_concrete_node.value = {concrete = expected_tile_name, position = position}
     else
-        table.insert(concrete_logistics.pending_concrete, {concrete = expected_tile_name, position = position})
+        linked_list.append(concrete_logistics.pending_concrete, {concrete = expected_tile_name, position = position})
     end
 end
 
@@ -132,7 +151,7 @@ function plan_concrete_for_entity(concrete_logistics, entity)
             if data ~= nil and not in_concrete_logistics(concrete_logistics, nearby_entity) then
                 local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(nearby_entity.position)
                 if closest_cell ~= nil and closest_cell.is_in_construction_range(nearby_entity.position) then
-                    table.insert(concrete_logistics.pending_entities, nearby_entity)
+                    linked_list.append(concrete_logistics.pending_entities, nearby_entity)
                 else
                     l:log("Entity " .. nearby_entity.name .. " at position " .. serpent.line(nearby_entity.position) .. " is out of range of the construction logistics network.")
                 end
@@ -155,61 +174,62 @@ end
 -- OR fulfills one pending_concrete construction request per tick, unless the the number of pending_construction tile_ghosts exceeds the max allowed
 -- OR examines one nearby entity every 3 ticks for nearby entities and pending concrete tile_ghosts
 function update_concrete_logistics(concrete_logistics)
-    l:log("Pending construction: " .. #concrete_logistics.pending_construction .. ", max pending construction: " .. max_pending_construction(concrete_logistics))
     if concrete_logistics.logistics.logistic_network == nil or concrete_logistics.logistics.logistic_network.all_construction_robots == 0 then
         if game.tick % 3600 == 0 then
             warn_no_construction_bots(concrete_logistics)
         end
-    elseif #concrete_logistics.pending_construction >= max_pending_construction(concrete_logistics) then
+    elseif concrete_logistics.pending_construction.count >= max_pending_construction(concrete_logistics) then
         if game.tick % 300 == 0 then
             prevent_pending_construction_death(concrete_logistics)
         end
-    elseif #concrete_logistics.pending_concrete > 0 then
+    elseif game.tick % 2 == 1 and concrete_logistics.pending_concrete.count > 0 then
         fulfill_construction_request(concrete_logistics)
-    elseif game.tick % 3 == 0 and #concrete_logistics.player_entities > 0 then
+    elseif game.tick % 5 == 3 and concrete_logistics.player_entities.count > 0 then
         examine_player_entities(concrete_logistics)
-    elseif game.tick % 3 == 0 and #concrete_logistics.pending_entities > 0 then
+    elseif game.tick % 5 == 3 and concrete_logistics.pending_entities.count > 0 then
         examine_nearby_entities_for_concrete_logistics(concrete_logistics)
     end
 end
 
 function examine_player_entities(concrete_logistics)
-    local entity = table.remove(concrete_logistics.player_entities, 1)
+    local entity = linked_list.pop(concrete_logistics.player_entities)
     if entity.valid then
         local pos = entity.position
         
-        for i = #concrete_logistics.entities, 1, -1 do
-            local other_entity = concrete_logistics.entities[i]
+        local iter = linked_list.iterator(concrete_logistics.entities)
+        while(iter.has_next()) do
+            local node = iter.next_node();
+            local other_entity = node.value
             if other_entity.valid then
                 local concrete_search_dist = concrete_data_for_entity(other_entity).search
                 if dist_squared(pos, other_entity.position) <= (concrete_search_dist * concrete_search_dist) then
-                    table.insert(concrete_logistics.pending_entities, entity)
+                    linked_list.append(concrete_logistics.pending_entities, entity)
                     return
                 end
             else
-                table.remove(concrete_logistics.entities, i)
+                linked_list.remove(concrete_logistics.entities, node)
             end
         end
     end
 end
 
 function examine_nearby_entities_for_concrete_logistics(concrete_logistics)
-    local entity_request = table.remove(concrete_logistics.pending_entities, 1)
+    local entity_request = linked_list.pop(concrete_logistics.pending_entities)
     if entity_request.valid then
-        table.insert(concrete_logistics.entities, entity_request)
+        linked_list.append(concrete_logistics.entities, entity_request)
         plan_concrete_for_entity(concrete_logistics, entity_request)
         l:log("Planned concrete for entity " .. serpent.line(entity_request.name))
     end
 end
 
 function fulfill_construction_request(concrete_logistics)
-    local concrete_request = table.remove(concrete_logistics.pending_concrete, 1)
+    local concrete_request = linked_list.pop(concrete_logistics.pending_concrete)
     local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(concrete_request.position)
     if closest_cell ~= nil and closest_cell.is_in_construction_range(concrete_request.position) then
         local data = {name = "tile-ghost", position = concrete_request.position, force = concrete_logistics.logistics.force, inner_name = concrete_request.concrete}
         local tile_ghost = concrete_logistics.logistics.surface.create_entity(data)
         if tile_ghost ~= nil then
-            table.insert(concrete_logistics.pending_construction, tile_ghost)
+            linked_list.append(concrete_logistics.pending_construction, tile_ghost)
         end
     else
         l:log("No logistics cell closest to position at " .. serpent.line(concrete_request.position))
@@ -232,26 +252,33 @@ end
 -- Iterates all tile-ghost entities in the concrete logistics pending_construction list
 -- Any invalid entities are removed, and the time_to_live for each entity is reset to the maximum allowed by its force
 function prevent_pending_construction_death(concrete_logistics)
-    for i = #concrete_logistics.pending_construction, 1, -1 do
-        local entity = concrete_logistics.pending_construction[i]
+    local iter = linked_list.iterator(concrete_logistics.pending_construction)
+    while(iter.has_next()) do
+        local node = iter.next_node()
+        local entity = node.value
         if entity.valid then
             entity.time_to_live = entity.force.ghost_time_to_live
         else
-            table.remove(concrete_logistics.pending_construction, i)
+            linked_list.remove(concrete_logistics.pending_construction, node)
         end
     end
 end
 
 -- function: in_concrete_logistics
 -- Checks if an entity is in either the pending_entities or already examined list of entities for a concrete logistics network
-function in_concrete_logistics(concrete_logistics, search_entity)
-    for _, entity_request in pairs(concrete_logistics.pending_entities) do
-        if search_entity == entity_request then
+function in_concrete_logistics(concrete_logistics, entity)
+    local iter = linked_list.iterator(concrete_logistics.pending_entities)
+    while(iter.has_next()) do
+        local item = iter.next()
+        if item == entity then
             return true
         end
     end
-    for _, entity in pairs(concrete_logistics.entities) do
-        if search_entity == entity then
+
+    iter = linked_list.iterator(concrete_logistics.entities)
+    while(iter.has_next()) do
+        local item = iter.next()
+        if item == entity then
             return true
         end
     end
