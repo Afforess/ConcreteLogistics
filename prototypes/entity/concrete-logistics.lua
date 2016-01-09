@@ -19,7 +19,7 @@ data:extend({
         },
         recharge_minimum = "5MJ",
         energy_usage = "100kW",
-        charging_energy = "200kW",
+        charging_energy = "400kW",
         logistics_radius = 0,
         construction_radius = 50,
         charge_approach_distance = 5,
@@ -86,7 +86,7 @@ data:extend({
           animation_speed = 0.5
         },
         recharging_light = {intensity = 0.4, size = 5},
-        request_to_open_door_timeout = 15,
+        request_to_open_door_timeout = 3,
         spawn_and_station_height = 1.75,
         radius_visualisation_picture =
         {

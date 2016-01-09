@@ -78,7 +78,7 @@ function entity_inside_concrete_logistics_area(entity, concrete_logistics)
 end
 
 function is_valid_tile_for_concrete(x, y, surface)
-    local adjacent = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
+    local adjacent = {{0, 0}, {1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
     for _, tuple in pairs(adjacent) do
         if surface.get_tile(x + tuple[1], y + tuple[2]).name == "water" then
             return false
