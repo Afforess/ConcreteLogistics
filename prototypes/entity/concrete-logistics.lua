@@ -20,8 +20,8 @@ data:extend({
         recharge_minimum = "5MJ",
         energy_usage = "100kW",
         charging_energy = "200kW",
-        logistics_radius = 5,
-        construction_radius = 10,
+        logistics_radius = 0,
+        construction_radius = 50,
         charge_approach_distance = 5,
         robot_slots_count = 0,
         material_slots_count = 0,
@@ -93,11 +93,11 @@ data:extend({
             filename = "__base__/graphics/entity/roboport/roboport-radius-visualization.png",
             width = 12,
             height = 12,
-            priority = "extra-high-no-scale"
+            priority = "high"
         },
         construction_radius_visualisation_picture =
         {
-            filename = "__base__/graphics/entity/roboport/roboport-construction-radius-visualization.png",
+            filename = "__ConcreteLogistics__/graphics/entity/roboport-concrete-radius-visualization.png",
             width = 12,
             height = 12,
             priority = "extra-high-no-scale"

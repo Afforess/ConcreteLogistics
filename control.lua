@@ -6,25 +6,28 @@ local logger = require 'libs/logger'
 local l = logger.new_logger("main")
 
 script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity}, function(event)
-    if event.created_entity.name == "concrete-logistics" then
-        event.created_entity.backer_name = ""
+    local created_entity = event.created_entity
+    if created_entity.name == "concrete-logistics" then
+        created_entity.backer_name = ""
         
         if not global.concrete_logistics_towers then global.concrete_logistics_towers = {} end
         -- logistics: the logistics tower entity
-        -- player_entities: list of entities recently constructed by player (or player bots), may or may not be in logistics concrete area, will be calculated eventually
         -- pending_concrete: list of tuples with concrete type and position, will be processed and converted into a tile_ghost entity
         -- pending_entities: list containing entities to be examined for pending concrete requests
         -- entities: list of examined entities that had concrete areas managed by the logistics tower
         -- pending_construction: list tile_ghost entities that are pending arrival of a construction bot
-        local data = {logistics = event.created_entity, player_entities = circular_buffer.new(), pending_concrete = circular_buffer.new(), pending_entities = circular_buffer.new(), entities = circular_buffer.new(), pending_construction = circular_buffer.new()}
-        circular_buffer.append(data.pending_entities, event.created_entity)
+        local concrete_area = expand_area(entity_area(created_entity), created_entity.logistic_cell.construction_radius)
+        local data = {logistics = created_entity, concrete_area = concrete_area, pending_concrete = circular_buffer.new(), pending_entities = circular_buffer.new(), entities = circular_buffer.new(), pending_construction = circular_buffer.new()}
+        update_entities_around_hub(data)
         table.insert(global.concrete_logistics_towers, data)
-        l:log("Concrete Logistics Hub created at " .. serpent.line(event.created_entity.position))
-    elseif global.concrete_logistics_towers and concrete_data_for_entity(event.created_entity) ~= nil then
-        local force = event.created_entity.force
+        l:log("Concrete Logistics Hub created at " .. serpent.line(created_entity.position))
+    elseif global.concrete_logistics_towers and concrete_data_for_entity(created_entity) ~= nil then
+        local force = created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
             if concrete_logistics.logistics.force == force then
-                circular_buffer.append(concrete_logistics.player_entities, event.created_entity)
+                if entity_inside_concrete_logistics_area(created_entity, concrete_logistics) then
+                    circular_buffer.append(concrete_logistics.pending_entities, created_entity)
+                end
             end
         end
     end
@@ -45,6 +48,34 @@ script.on_event(defines.events.on_tick, function(event)
         end
     end
 end)
+
+
+function update_entities_around_hub(concrete_logistics)
+    -- Add nearby entities to the queue
+    local position = concrete_logistics.logistics.position
+    local surface = concrete_logistics.logistics.surface
+    local entities = surface.find_entities_filtered({area = concrete_logistics.concrete_area, force = concrete_logistics.logistics.force})
+    -- sort entities by distance, not strictly nessecary, but aesthetically pleasing
+    local sorted_entities = {}
+    for _, nearby_entity in pairs(entities) do
+        local data = concrete_data_for_entity(nearby_entity)
+        if data ~= nil and entity_inside_concrete_logistics_area(nearby_entity, concrete_logistics) then
+            table.insert(sorted_entities, {pos = nearby_entity.position, entity = nearby_entity})
+        end
+    end
+    table.sort(sorted_entities, function(a, b)
+        return dist_squared(a.pos, position) < dist_squared(b.pos, position)
+    end)
+    for _, data in pairs(sorted_entities) do
+        circular_buffer.append(concrete_logistics.pending_entities, data.entity)
+    end
+end
+
+
+function entity_inside_concrete_logistics_area(entity, concrete_logistics)
+    local concrete_area = concrete_logistics.concrete_area
+    return area_inside(concrete_area, entity_area(entity))
+end
 
 function is_valid_tile_for_concrete(x, y, surface)
     local adjacent = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
@@ -77,7 +108,6 @@ end
 
 function get_expected_tile_name(x, y, surface, force)
     local area = expand_area(tile_area(x, y, 1), get_largest_concrete_radius())
-    l:log("Tile Search Area: " .. serpent.line(area))
     local entities = surface.find_entities_filtered({area = area, force = force})
     local highest_priority_data = nil
     for _, entity in pairs(entities) do
@@ -129,22 +159,6 @@ function plan_concrete_for_entity(concrete_logistics, entity)
             end
         end
     end
-    -- Add nearby entities to the queue
-    local entity_search_area = expand_area(entity_area(entity), math.max(concrete_data.radius, concrete_data.search) - 1)
-    local entities = surface.find_entities_filtered({area = entity_search_area, force = concrete_logistics.logistics.force})
-    for _, nearby_entity in pairs(entities) do
-        if nearby_entity.name ~= "tile-ghost" and nearby_entity.name ~= "entity-ghost" then
-            local data = concrete_data_for_entity(nearby_entity)
-            if data ~= nil and not in_concrete_logistics(concrete_logistics, nearby_entity) then
-                local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(nearby_entity.position)
-                if closest_cell ~= nil and closest_cell.is_in_construction_range(nearby_entity.position) then
-                    circular_buffer.append(concrete_logistics.pending_entities, nearby_entity)
-                else
-                    l:log("Entity " .. nearby_entity.name .. " at position " .. serpent.line(nearby_entity.position) .. " is out of range of the construction logistics network.")
-                end
-            end
-        end
-    end
 end
 
 -- function: max_pending_construction
@@ -171,32 +185,8 @@ function update_concrete_logistics(concrete_logistics)
         end
     elseif game.tick % 2 == 1 and concrete_logistics.pending_concrete.count > 0 then
         fulfill_construction_request(concrete_logistics)
-    elseif game.tick % 5 == 3 and concrete_logistics.player_entities.count > 0 then
-        examine_player_entities(concrete_logistics)
     elseif game.tick % 5 == 3 and concrete_logistics.pending_entities.count > 0 then
         examine_nearby_entities_for_concrete_logistics(concrete_logistics)
-    end
-end
-
-function examine_player_entities(concrete_logistics)
-    local entity = circular_buffer.pop(concrete_logistics.player_entities)
-    if entity.valid then
-        local pos = entity.position
-        
-        local iter = circular_buffer.iterator(concrete_logistics.entities)
-        while(iter.has_next()) do
-            local node = iter.next_node();
-            local other_entity = node.value
-            if other_entity.valid then
-                local concrete_search_dist = concrete_data_for_entity(other_entity).search
-                if dist_squared(pos, other_entity.position) <= (concrete_search_dist * concrete_search_dist) then
-                    circular_buffer.append(concrete_logistics.pending_entities, entity)
-                    return
-                end
-            else
-                circular_buffer.remove(concrete_logistics.entities, node)
-            end
-        end
     end
 end
 
@@ -251,39 +241,12 @@ function prevent_pending_construction_death(concrete_logistics)
     end
 end
 
--- function: in_concrete_logistics
--- Checks if an entity is in either the pending_entities or already examined list of entities for a concrete logistics network
-function in_concrete_logistics(concrete_logistics, entity)
-    local iter = circular_buffer.iterator(concrete_logistics.pending_entities)
-    while(iter.has_next()) do
-        local item = iter.next()
-        if item == entity then
-            return true
-        end
-    end
-
-    iter = circular_buffer.iterator(concrete_logistics.entities)
-    while(iter.has_next()) do
-        local item = iter.next()
-        if item == entity then
-            return true
-        end
-    end
-    return false
-end
-
 -- function: dist_squared
 -- squared distance between two positions (square roots are expensive)
 function dist_squared(pos_a, pos_b)
     local axbx = pos_a.x - pos_b.x
     local ayby = pos_a.y - pos_b.y
     return axbx * axbx + ayby * ayby
-end
-
--- function: tile_has_ghost
--- Checks if a given x,y pair of coordinates on a surface has a tile-ghost entity at the location
-function tile_has_ghost(x, y, surface, force)
-    return get_tile_ghost(x, y, surface, force) ~= nil
 end
 
 -- function: get_tile_ghost
@@ -302,6 +265,13 @@ function get_tile_ghost(x, y, surface, force)
         end
     end
     return nil
+end
+
+-- function: area_inside
+-- Checks if a given area contains the other_area completely inside of itself
+function area_inside(area, other_area)
+    return inside_area(other_area.left_top.x, other_area.left_top.y, area) and
+            inside_area(other_area.right_bottom.x, other_area.right_bottom.y, area)
 end
 
 -- function: inside_area
