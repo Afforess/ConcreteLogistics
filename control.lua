@@ -1,9 +1,8 @@
 require 'defines'
 require 'libs/concrete'
 require 'libs/circular_buffer'
-
-local logger = require 'libs/logger'
-local l = logger.new_logger("main")
+require 'libs/logger'
+require 'libs/settings_gui'
 
 script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity}, function(event)
     local created_entity = event.created_entity
@@ -20,7 +19,7 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
         local data = {logistics = created_entity, concrete_area = concrete_area, pending_concrete = circular_buffer.new(), pending_entities = circular_buffer.new(), entities = circular_buffer.new(), pending_construction = circular_buffer.new()}
         update_entities_around_hub(data)
         table.insert(global.concrete_logistics_towers, data)
-        l:log("Concrete Logistics Hub created at " .. serpent.line(created_entity.position))
+        Logger.log("Concrete Logistics Hub created at " .. serpent.line(created_entity.position))
     elseif global.concrete_logistics_towers and concrete_data_for_entity(created_entity) ~= nil then
         local force = created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
@@ -195,7 +194,7 @@ function examine_nearby_entities_for_concrete_logistics(concrete_logistics)
     if entity_request.valid then
         circular_buffer.append(concrete_logistics.entities, entity_request)
         plan_concrete_for_entity(concrete_logistics, entity_request)
-        l:log("Planned concrete for entity " .. serpent.line(entity_request.name))
+        Logger.log("Planned concrete for entity " .. serpent.line(entity_request.name))
     end
 end
 
@@ -209,7 +208,7 @@ function fulfill_construction_request(concrete_logistics)
             circular_buffer.append(concrete_logistics.pending_construction, tile_ghost)
         end
     else
-        l:log("No logistics cell closest to position at " .. serpent.line(concrete_request.position))
+        Logger.log("No logistics cell closest to position at " .. serpent.line(concrete_request.position))
     end
 end
 
