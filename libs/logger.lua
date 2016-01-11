@@ -28,7 +28,7 @@ function Logger.dump()
         Logger.last_write_tick = game.tick
         Logger.last_write_size = #Logger.log_buffer
         local file_name = "logs/" .. Logger.prefix .. "/" .. Logger.name .. ".log"
-        game.write_file(file_name, table.concat(Logger.log_buffer), ever_written)
+        game.write_file(file_name, table.concat(Logger.log_buffer), Logger.ever_written)
         Logger.log_buffer = {}
         Logger.ever_written = true
         return true

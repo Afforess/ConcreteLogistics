@@ -10,7 +10,7 @@ data.raw["gui-style"].default["structure-label"] =
 {
     type = "label_style",
     parent = "label_style",
-    width = 155,
+    width = 160,
     align = "center",
     font = "font-lb"
 }
@@ -44,4 +44,31 @@ data.raw["gui-style"].default["tile-radius-label"] =
     parent = "label_style",
     width = 60,
     align = "center",
+}
+data.raw["gui-style"].default["page-number-label"] =
+{
+    type = "label_style",
+    parent = "label_style",
+    width = 50,
+    align = "center",
+}
+data.raw["gui-style"].default["structure-item-label"] =
+{
+    type = "label_style",
+    parent = "label_style",
+    width = 140
+}
+data.raw["gui-style"].default["structure-item-label-bold"] =
+{
+    type = "label_style",
+    parent = "label_style",
+    width = 140,
+    font = "font-lb"
+}
+data.raw["gui-style"].default["selection-instruction-label"] =
+{
+    type = "label_style",
+    parent = "label_style",
+    width = 300,
+    font = "font-lb"
 }
