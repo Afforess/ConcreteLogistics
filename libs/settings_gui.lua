@@ -1,13 +1,13 @@
 script.on_init(function()
     remote.call("WrenchFu", "register", "concrete-logistics", "concrete-logistics-api", "show_my_gui", "hide_my_gui")
     
-    save_concrete_data()
+    init_concrete_data()
 end)
 
 script.on_load(function()
     remote.call("WrenchFu", "register", "concrete-logistics", "concrete-logistics-api", "show_my_gui", "hide_my_gui")
     
-    save_concrete_data()
+    init_concrete_data()
 end)
 
 script.on_event(defines.events.on_gui_click, function(event)
@@ -43,7 +43,7 @@ script.on_event(defines.events.on_gui_click, function(event)
             local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             if player_gui_data.editing_structure ~= editing_structure then
                 player_gui_data.editing_structure = editing_structure
-                update_entities_around_hub(open_concrete_logistics, editing_structure)
+                update_entities_around_hub(open_concrete_logistics, concrete_data_for_type(editing_structure).types)
             end
             render_concrete_selection_gui(player, open_concrete_logistics, editing_structure)
         end
@@ -52,7 +52,7 @@ script.on_event(defines.events.on_gui_click, function(event)
         if open_concrete_logistics then
             local structure = open_concrete_logistics.gui_data[event.player_index].editing_structure
             if structure then
-                global.concrete_data[structure].concrete = find_concrete_selected_in_gui(gui_element.name)
+                concrete_data_for_type(structure).concrete = find_concrete_selected_in_gui(gui_element.name)
 
                 render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
             end
@@ -114,45 +114,46 @@ function open_gui(player_index, concrete_logistics)
 end
 
 function update_priority(gui_element, concrete_logistics)
-    for structure, concrete_setting in pairs(global.concrete_data) do
-        local inc_priority = "structure-" .. structure .. "-increase-priority"
-        if gui_element.name == inc_priority then
-            increase_priority(structure, concrete_logistics)
-            update_entities_around_hub(concrete_logistics, structure)
-            break
-        end
-        local dec_priority = "structure-" .. structure .. "-decrease-priority"
-        if gui_element.name == dec_priority then
-            decrease_priority(structure, concrete_logistics)
-            update_entities_around_hub(concrete_logistics, structure)
-            break
+    for i, concrete_data in pairs(global.concrete_data) do
+        for j, structure in pairs(concrete_data.types) do
+            local inc_priority = "structure-" .. structure .. "-increase-priority"
+            if gui_element.name == inc_priority then
+                increase_priority(concrete_data, concrete_logistics)
+                update_entities_around_hub(concrete_logistics, concrete_data.types)
+                return true
+            end
+            local dec_priority = "structure-" .. structure .. "-decrease-priority"
+            if gui_element.name == dec_priority then
+                decrease_priority(concrete_data, concrete_logistics)
+                update_entities_around_hub(concrete_logistics, concrete_data.types)
+                return true
+            end
         end
     end
+    return false
 end
 
-function decrease_priority(key, concrete_logistics)
-    if global.concrete_data[key].priority > 1 then
-        local priority = global.concrete_data[key].priority - 1
-        global.concrete_data[key].priority = priority
-        for structure, concrete_setting in pairs(global.concrete_data) do
-            Logger.log("Structure: " .. structure .. " Priority: " .. concrete_setting.priority .. " Search Priority: " .. priority)
-            if structure ~= key and concrete_setting.priority == priority then
-                concrete_setting.priority = concrete_setting.priority + 1
-                update_entities_around_hub(concrete_logistics, structure)
+function decrease_priority(concrete_data, concrete_logistics)
+    if concrete_data.priority > 1 then
+        local priority = concrete_data.priority - 1
+        concrete_data.priority = priority
+        for _, concrete_item in pairs(global.concrete_data) do
+            if concrete_data ~= concrete_item and concrete_item.priority == priority then
+                concrete_item.priority = concrete_item.priority + 1
+                update_entities_around_hub(concrete_logistics, concrete_item.types)
             end
         end
     end
 end
 
-function increase_priority(key, concrete_logistics)
-    if global.concrete_data[key].priority < get_max_concrete_priority() then
-        local priority = global.concrete_data[key].priority + 1
-        global.concrete_data[key].priority = priority
-        for structure, concrete_setting in pairs(global.concrete_data) do
-            Logger.log("Structure: " .. structure .. " Priority: " .. concrete_setting.priority .. " Search Priority: " .. priority)
-            if structure ~= key and concrete_setting.priority == priority then
-                concrete_setting.priority = concrete_setting.priority - 1
-                update_entities_around_hub(concrete_logistics, structure)
+function increase_priority(concrete_data, concrete_logistics)
+    if concrete_data.priority < get_max_concrete_priority() then
+        local priority = concrete_data.priority + 1
+        concrete_data.priority = priority
+        for _, concrete_item in pairs(global.concrete_data) do
+            if concrete_data ~= concrete_item and concrete_item.priority == priority then
+                concrete_item.priority = concrete_item.priority - 1
+                update_entities_around_hub(concrete_logistics, concrete_item.types)
             end
         end
     end
@@ -172,9 +173,9 @@ function find_concrete_selected_in_gui(name)
 end
 
 function find_structure_selected_in_gui(name)
-    for structure, concrete_setting in pairs(global.concrete_data) do
-        if ("structure-icon-" .. structure) == name then
-            return structure
+    for _, concrete_data in pairs(global.concrete_data) do
+        if ("structure-icon-" .. concrete_data.types[1]) == name then
+            return concrete_data.types[1]
         end
     end
     return nil
@@ -185,7 +186,7 @@ function render_concrete_selection_gui(player, concrete_logistics, editing_struc
         player.gui.center["concrete_logistics_frame"].destroy()
     end
     
-    local structure_item = global.concrete_data[editing_structure].icon_name
+    local structure_item = concrete_data_for_type(editing_structure).icon_name
     local structure_name = game.entity_prototypes[structure_item].localised_name
 
     local root = player.gui.center.add({type="frame", direction="vertical", name="concrete_logistics_frame", caption={"gui.settings"}})
@@ -219,46 +220,32 @@ function render_main_gui(player, concrete_logistics, active_page)
     title_bar.add({type="label", caption={"gui.settings.title_bar.radius"}, style="radius-label"})
     title_bar.add({type="label", caption={"gui.settings.title_bar.shape"}, style="shape-label"})
 
-    local data = {}
-    for structure, concrete_setting in pairs(global.concrete_data) do
-        local found = false
-        for k, v in pairs(data) do
-            if v.settings == concrete_setting then
-                found = true
-                break
-            end
-        end
-        if not found then
-            table.insert(data, {structure = structure, settings = concrete_setting})
-        end
-    end
-    table.sort(data, function(a, b)
-        return a.settings.priority < b.settings.priority
+    table.sort(global.concrete_data, function(a, b)
+        return a.priority < b.priority
     end)
     
     local table = root.add({type="table", name="table", colspan = 8, style = "concrete-logistics-items-table"})
-    local max_index = math.min(active_page * 10, #data)
+    local max_index = math.min(active_page * 10, #global.concrete_data)
     for i = ((active_page - 1) * 10) + 1, max_index do
-        local concrete_data = data[i]
+        local concrete_data = global.concrete_data[i]
         
-        local structure = concrete_data.structure
-        local concrete_settings = concrete_data.settings
-        local structure_name = game.entity_prototypes[concrete_settings.icon_name].localised_name
+        local structure = concrete_data.types[1]
+        local structure_name = game.entity_prototypes[concrete_data.icon_name].localised_name
         if game.entity_prototypes[structure] then structure_name = game.entity_prototypes[structure].localised_name end
         
-        table.add({type="label", caption={"gui.settings.priority", concrete_settings.priority}})
+        table.add({type="label", caption={"gui.settings.priority", concrete_data.priority}})
         table.add({type = "button", name="structure-" .. structure .. "-increase-priority", style = "concrete-logistics-up-arrow"})
         table.add({type = "button", name="structure-" .. structure .. "-decrease-priority", style = "concrete-logistics-down-arrow"})
         
-        table.add({type="button", name="structure-dummy-icon-" .. structure, style="concrete-logistics-icon-" .. concrete_settings.icon_name})
+        table.add({type="button", name="structure-dummy-icon-" .. structure, style="concrete-logistics-icon-" .. concrete_data.icon_name})
         table.add({type="label", style="structure-item-label", caption={"gui.settings.structure", structure_name}})
         
-        table.add({type="button", name="structure-icon-" .. structure, style="concrete-logistics-icon-" .. concrete_settings.concrete})
+        table.add({type="button", name="structure-icon-" .. structure, style="concrete-logistics-icon-" .. concrete_data.concrete})
         
-        if concrete_settings.radius == 1 then
-            table.add({type="label", caption={"gui.settings.radius_singular", concrete_settings.radius}, style = "tile-radius-label"})
+        if concrete_data.radius == 1 then
+            table.add({type="label", caption={"gui.settings.radius_singular", concrete_data.radius}, style = "tile-radius-label"})
         else
-            table.add({type="label", caption={"gui.settings.radius", concrete_settings.radius}, style = "tile-radius-label"})
+            table.add({type="label", caption={"gui.settings.radius", concrete_data.radius}, style = "tile-radius-label"})
         end
         
         table.add({type="label", caption={"gui.settings.shape.square"}, style = "tile-radius-label"})
@@ -266,7 +253,7 @@ function render_main_gui(player, concrete_logistics, active_page)
     
     local page_navigation = root.add({type="flow", name="page_navigation", direction="horizontal", style="concrete-logistics-name-flow"})
     page_navigation.add({type="button", name="cl-page-left", style="button_style", caption = {"gui.settings.page_left"}})
-    page_navigation.add({type="button", name="cl-page-number", style="button_style", caption = {"gui.settings.page", active_page, math.floor(#data / 10) + 1}})
+    page_navigation.add({type="button", name="cl-page-number", style="button_style", caption = {"gui.settings.page", active_page, math.floor(#global.concrete_data / 10) + 1}})
     page_navigation.add({type="button", name="cl-page-right", style="button_style", caption = {"gui.settings.page_right"}})
 
 end

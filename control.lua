@@ -10,7 +10,7 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
         created_entity.backer_name = ""
         
         if not global.concrete_logistics_towers then global.concrete_logistics_towers = {} end
-        save_concrete_data()
+        init_concrete_data()
 
         -- logistics: the logistics tower entity
         -- pending_concrete: list of tuples with concrete type and position, will be processed and converted into a tile_ghost entity
@@ -51,15 +51,21 @@ script.on_event(defines.events.on_tick, function(event)
 end)
 
 
-function update_entities_around_hub(concrete_logistics, entity_type)
+function update_entities_around_hub(concrete_logistics, entity_types)
     -- Add nearby entities to the queue
     local position = concrete_logistics.logistics.position
     local surface = concrete_logistics.logistics.surface
     local entities = nil
-    if entity_type == nil then
+    if entity_types == nil then
         entities = surface.find_entities_filtered({area = concrete_logistics.concrete_area, force = concrete_logistics.logistics.force})
     else
-        entities = surface.find_entities_filtered({area = concrete_logistics.concrete_area, type = entity_type, force = concrete_logistics.logistics.force})
+        entities = {}
+        for _, entity_type in pairs(entity_types) do
+            local list = surface.find_entities_filtered({area = concrete_logistics.concrete_area, type = entity_type, force = concrete_logistics.logistics.force})
+            for index, entity in pairs(list) do
+                table.insert(entities, entity)
+            end
+        end
     end
     -- sort entities by distance, not strictly nessecary, but aesthetically pleasing
     local sorted_entities = {}
