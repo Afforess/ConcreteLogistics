@@ -9,7 +9,7 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
     if created_entity.name == "concrete-logistics" then
         created_entity.backer_name = ""
         
-        if not global.concrete_logistics_towers then global.concrete_logistics_towers = {} end
+        if not global.concrete_logistics_hubs then global.concrete_logistics_hubs = {} end
         init_concrete_data()
 
         -- logistics: the logistics tower entity
@@ -20,11 +20,11 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
         local concrete_area = expand_area(entity_area(created_entity), created_entity.logistic_cell.construction_radius)
         local data = {logistics = created_entity, concrete_area = concrete_area, pending_concrete = circular_buffer.new(), pending_entities = circular_buffer.new(), pending_construction = circular_buffer.new()}
         update_entities_around_hub(data, nil)
-        table.insert(global.concrete_logistics_towers, data)
+        table.insert(global.concrete_logistics_hubs, data)
         Logger.log("Concrete Logistics Hub created at " .. serpent.line(created_entity.position))
-    elseif global.concrete_logistics_towers and concrete_data_for_entity(created_entity) ~= nil then
+    elseif global.concrete_logistics_hubs and concrete_data_for_entity(created_entity) ~= nil then
         local force = created_entity.force
-        for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
+        for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
             if concrete_logistics.logistics.force == force then
                 if entity_inside_concrete_logistics_area(created_entity, concrete_logistics) then
                     circular_buffer.append(concrete_logistics.pending_entities, created_entity)
@@ -35,16 +35,16 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
 end)
 
 script.on_event(defines.events.on_tick, function(event)
-    if global.concrete_logistics_towers then 
-        for i = #global.concrete_logistics_towers, 1, -1 do
-            local data = global.concrete_logistics_towers[i]
+    if global.concrete_logistics_hubs then 
+        for i = #global.concrete_logistics_hubs, 1, -1 do
+            local data = global.concrete_logistics_hubs[i]
             if data.logistics ~= nil and data.logistics.valid then
                 update_concrete_logistics(data)
                 if game.tick % 3600 == 0 then
                     prevent_pending_construction_death(data)
                 end
             else
-                table.remove(global.concrete_logistics_towers, i)
+                table.remove(global.concrete_logistics_hubs, i)
             end
         end
     end

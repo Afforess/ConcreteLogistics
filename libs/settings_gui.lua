@@ -8,6 +8,8 @@ script.on_load(function()
     remote.call("WrenchFu", "register", "concrete-logistics", "concrete-logistics-api", "show_my_gui", "hide_my_gui")
     
     init_concrete_data()
+    -- clear old data
+    global.concrete_logistics_towers = nil
 end)
 
 script.on_event(defines.events.on_gui_click, function(event)
@@ -61,7 +63,7 @@ script.on_event(defines.events.on_gui_click, function(event)
 end)
 
 function lookup_concrete_logistics_for_player(player_index)
-    for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
+    for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
         if concrete_logistics.gui_data[player_index] ~= nil then
             return concrete_logistics
         end
@@ -96,7 +98,7 @@ remote.add_interface("concrete-logistics-api", interface)
 function get_concrete_logistics(position, surface_name)
     local surface = game.surfaces[surface_name]
     local entity = surface.find_entity("concrete-logistics", position)
-    for _, concrete_logistics in pairs(global.concrete_logistics_towers) do
+    for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
         if concrete_logistics.logistics == entity then
             return concrete_logistics
         end
