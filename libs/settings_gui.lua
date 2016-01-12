@@ -303,5 +303,7 @@ function close_gui(player_index, concrete_logistics)
     if gui_root then
         gui_root.destroy()
     end
-    concrete_logistics.gui_data[player_index] = nil
+    if concrete_logistics and concrete_logistics.gui_data then
+        concrete_logistics.gui_data[player_index] = nil
+    end
 end
