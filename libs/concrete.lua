@@ -20,23 +20,40 @@ table.insert(concrete_data, {types = {"roboport"}, radius = 1, concrete = "concr
 table.insert(concrete_data, {types = {"accumulator"}, radius = 2, concrete = "concrete-blue", priority = 9 , icon_name = "basic-accumulator"})
 table.insert(concrete_data, {types = {"beacon"}, radius = 3, concrete = "concrete", priority = 10, icon_name = "basic-beacon"})
 table.insert(concrete_data, {types = {"solar-panel"}, radius = 2, concrete = "concrete-white", priority = 21, icon_name = "solar-panel"})
+_concrete_cache = {}
 
 function init_concrete_data()
     if not global.concrete_data then
         global.concrete_data = concrete_data
     end
+    local list = structure_for_each_concrete_data()
+    for structure, concrete_data in pairs(list) do
+        _concrete_cache[structure] = concrete_data
+    end
 end
 
 function concrete_data_for_type(type)
-    for i = 1, #global.concrete_data do
-        local concrete_data = global.concrete_data[i]
-        for j = 1, #concrete_data.types do
-            if concrete_data.types[j] == type then
-                return concrete_data
-            end
+    return _concrete_cache[type]
+    --
+    --for i = 1, #global.concrete_data do
+    --    local concrete_data = global.concrete_data[i]
+    --    for j = 1, #concrete_data.types do
+    --        if concrete_data.types[j] == type then
+    --            return concrete_data
+    --        end
+    --    end
+    --end
+    --return nil
+end
+
+function structure_for_each_concrete_data()
+    local table = {}
+    for i, concrete_data in pairs(global.concrete_data) do
+        for j, structure in pairs(concrete_data.types) do
+            table[structure] = concrete_data
         end
     end
-    return nil
+    return table
 end
 
 function concrete_data_for_entity(entity)
@@ -45,6 +62,27 @@ function concrete_data_for_entity(entity)
         return concrete_data
     end
     return nil
+end
+
+function set_concrete_data_priority(concrete_logistics, concrete_data, priority)
+    local prev_priority = concrete_data.priority
+    if prev_priority ~= priority then
+        concrete_data.priority = priority
+        update_entities_around_hub(concrete_logistics, concrete_data.types)
+        return true
+    end
+    return false
+end
+
+function set_concrete_data_radius(concrete_logistics, concrete_data, radius)
+    local prev_radius = concrete_data.radius
+    concrete_data.radius = math.max(0, math.min(10, radius))
+    if prev_radius ~= concrete_data.radius then
+        _max_concrete_distance = -1
+        update_entities_around_hub(concrete_logistics, concrete_data.types)
+        return true
+    end
+    return false
 end
 
 _max_concrete_distance = -1

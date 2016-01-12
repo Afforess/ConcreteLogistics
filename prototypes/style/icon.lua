@@ -1,6 +1,6 @@
 local styles = data.raw["gui-style"].default
 
-local up_arrow_style =
+local down_arrow_style =
 {
     type = "monolith",
     top_monolith_border = 1,
@@ -18,7 +18,7 @@ local up_arrow_style =
     }
 }
 
-local down_arrow_style =
+local up_arrow_style =
 {
     type = "monolith",
     top_monolith_border = 1,

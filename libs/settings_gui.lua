@@ -17,31 +17,39 @@ script.on_event(defines.events.on_gui_click, function(event)
 
     local player = game.players[event.player_index]
     local gui_element = event.element
-    if string.find(gui_element.name, "increase-priority", 1, true) or string.find(gui_element.name, "decrease-priority", 1, true) then
-        local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
-        if open_concrete_logistics then
-            update_priority(gui_element, open_concrete_logistics)
+
+    local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
+    if not open_concrete_logistics then
+        Logger.log("No concrete logistics open")
+        return
+    end
+
+    if gui_element.name == "cl-exit-menu" then
+        close_gui(event.player_index, open_concrete_logistics)
+    elseif gui_element.name == "cl_fill_gaps_checkbox" then
+        open_concrete_logistics.fill_gaps = gui_element.state
+    elseif gui_element.name == "deconstruction_checkbox" then
+        open_concrete_logistics.deconstruction_enabled = gui_element.state
+    elseif gui_element_name_contains(gui_element, "increase-priority") or gui_element_name_contains(gui_element, "decrease-priority") then
+        if update_priority(gui_element, open_concrete_logistics) then
             render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
         end
     elseif gui_element.name == "cl-page-left" then
-        local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
-        if open_concrete_logistics and open_concrete_logistics.gui_data[event.player_index].active_page > 1 then
+        if open_concrete_logistics.gui_data[event.player_index].active_page > 1 then
             local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             player_gui_data.active_page = player_gui_data.active_page - 1
             render_main_gui(player, open_concrete_logistics, player_gui_data.active_page)
         end
     elseif gui_element.name == "cl-page-right" then
-        local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
         local max_page = math.floor(get_max_concrete_priority() / 10) + 1
-        if open_concrete_logistics and open_concrete_logistics.gui_data[event.player_index].active_page < max_page then
+        if open_concrete_logistics.gui_data[event.player_index].active_page < max_page then
             local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             player_gui_data.active_page = player_gui_data.active_page + 1
             render_main_gui(player, open_concrete_logistics, player_gui_data.active_page)
         end
-    elseif string.find(gui_element.name, "structure-icon", 1, true) then
-        local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
+    elseif gui_element_name_contains(gui_element, "structure-icon") then
         local editing_structure = find_structure_selected_in_gui(gui_element.name)
-        if open_concrete_logistics and editing_structure then
+        if editing_structure then
             local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             if player_gui_data.editing_structure ~= editing_structure then
                 player_gui_data.editing_structure = editing_structure
@@ -49,18 +57,22 @@ script.on_event(defines.events.on_gui_click, function(event)
             end
             render_concrete_selection_gui(player, open_concrete_logistics, editing_structure)
         end
-    elseif string.find(gui_element.name, "selection-concrete-icon", 1, true) then
-        local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
-        if open_concrete_logistics then
-            local structure = open_concrete_logistics.gui_data[event.player_index].editing_structure
-            if structure then
-                concrete_data_for_type(structure).concrete = find_concrete_selected_in_gui(gui_element.name)
-
-                render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
-            end
+    elseif gui_element_name_contains(gui_element, "selection-concrete-icon") then
+        local structure = open_concrete_logistics.gui_data[event.player_index].editing_structure
+        if structure then
+            concrete_data_for_type(structure).concrete = find_concrete_selected_in_gui(gui_element.name)
+            render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
+        end
+    elseif gui_element_name_contains(gui_element, "structure-radius-") then
+        if update_concrete_radius(gui_element, open_concrete_logistics) then
+            render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
         end
     end
 end)
+
+function gui_element_name_contains(gui_element, str)
+    return string.find(gui_element.name, str, 1, true)
+end
 
 function lookup_concrete_logistics_for_player(player_index)
     for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
@@ -115,50 +127,58 @@ function open_gui(player_index, concrete_logistics)
     render_main_gui(player, concrete_logistics, 1)
 end
 
-function update_priority(gui_element, concrete_logistics)
-    for i, concrete_data in pairs(global.concrete_data) do
-        for j, structure in pairs(concrete_data.types) do
-            local inc_priority = "structure-" .. structure .. "-increase-priority"
-            if gui_element.name == inc_priority then
-                increase_priority(concrete_data, concrete_logistics)
-                update_entities_around_hub(concrete_logistics, concrete_data.types)
-                return true
-            end
-            local dec_priority = "structure-" .. structure .. "-decrease-priority"
-            if gui_element.name == dec_priority then
-                decrease_priority(concrete_data, concrete_logistics)
-                update_entities_around_hub(concrete_logistics, concrete_data.types)
-                return true
-            end
+function update_concrete_radius(gui_element, concrete_logistics)
+    local list = structure_for_each_concrete_data()
+    for structure, concrete_data in pairs(list) do
+        if gui_element.name == ("structure-radius-" .. structure .. "-increase-radius") then
+            return set_concrete_data_radius(concrete_logistics, concrete_data, concrete_data.radius + 1)
+        end
+        if gui_element.name == ("structure-radius-" .. structure .. "-decrease-radius") then
+            return set_concrete_data_radius(concrete_logistics, concrete_data, concrete_data.radius - 1)
         end
     end
     return false
 end
 
-function decrease_priority(concrete_data, concrete_logistics)
-    if concrete_data.priority > 1 then
-        local priority = concrete_data.priority - 1
-        concrete_data.priority = priority
-        for _, concrete_item in pairs(global.concrete_data) do
-            if concrete_data ~= concrete_item and concrete_item.priority == priority then
-                concrete_item.priority = concrete_item.priority + 1
-                update_entities_around_hub(concrete_logistics, concrete_item.types)
-            end
+function update_priority(gui_element, concrete_logistics)
+    local list = structure_for_each_concrete_data()
+    for structure, concrete_data in pairs(list) do
+        if gui_element.name == ("structure-" .. structure .. "-increase-priority") then
+            return increase_priority(concrete_data, concrete_logistics)
+        end
+        if gui_element.name == ("structure-" .. structure .. "-decrease-priority") then
+            return decrease_priority(concrete_data, concrete_logistics)
         end
     end
+    return false
 end
 
 function increase_priority(concrete_data, concrete_logistics)
-    if concrete_data.priority < get_max_concrete_priority() then
-        local priority = concrete_data.priority + 1
-        concrete_data.priority = priority
+    if concrete_data.priority > 1 then
+        local priority = concrete_data.priority - 1
+        set_concrete_data_priority(concrete_logistics, concrete_data, priority)
         for _, concrete_item in pairs(global.concrete_data) do
             if concrete_data ~= concrete_item and concrete_item.priority == priority then
-                concrete_item.priority = concrete_item.priority - 1
-                update_entities_around_hub(concrete_logistics, concrete_item.types)
+                set_concrete_data_priority(concrete_logistics, concrete_item, concrete_item.priority + 1)
             end
         end
+        return true
     end
+    return false
+end
+
+function decrease_priority(concrete_data, concrete_logistics)
+    if concrete_data.priority < get_max_concrete_priority() then
+        local priority = concrete_data.priority + 1
+        set_concrete_data_priority(concrete_logistics, concrete_data, priority)
+        for _, concrete_item in pairs(global.concrete_data) do
+            if concrete_data ~= concrete_item and concrete_item.priority == priority then
+                set_concrete_data_priority(concrete_logistics, concrete_item, concrete_item.priority - 1)
+            end
+        end
+        return true
+    end
+    return false
 end
 
 local concrete_types = {"concrete-red", "concrete-orange", "concrete-yellow", "concrete-green", "concrete-cyan",
@@ -215,7 +235,19 @@ function render_main_gui(player, concrete_logistics, active_page)
 
     local root = player.gui.center.add({type="frame", direction="vertical", name="concrete_logistics_frame", caption={"gui.settings"}})
     
-    local title_bar = root.add({type="flow", name="title_bar", direction="horizontal", style="concrete-logistics-name-flow"})
+    local settings_flow = root.add({type="flow", name="settings_flow", direction="vertical"})
+
+    local fill_gaps_enabled = concrete_logistics.fill_gaps or false
+    local fill_gaps_flow = settings_flow.add({type="flow", name="fill_gaps_flow", direction="horizontal", style="concrete-logistics-name-flow"})
+    fill_gaps_flow.add({type="label", caption={"gui.settings.fill_concrete_gaps"}, style="setting-item-label"})
+    fill_gaps_flow.add({type="checkbox", name="cl_fill_gaps_checkbox", state=fill_gaps_enabled})
+
+    local deconstruction_enabled = concrete_logistics.deconstruction_enabled or false
+    local deconstruction_flow = settings_flow.add({type="flow", name="deconstruction_flow", direction="horizontal", style="concrete-logistics-name-flow"})
+    deconstruction_flow.add({type="label", caption={"gui.settings.deconstruct_placement"}, style="setting-item-label"})
+    deconstruction_flow.add({type="checkbox", name="deconstruction_checkbox", state=deconstruction_enabled})
+    
+    local title_bar = settings_flow.add({type="flow", name="title_bar", direction="horizontal", style="concrete-logistics-name-flow"})
     title_bar.add({type="label", caption={"gui.settings.title_bar.priority"}, style="priority-label"})
     title_bar.add({type="label", caption={"gui.settings.title_bar.structure"}, style="structure-label"})
     title_bar.add({type="label", caption={"gui.settings.title_bar.concrete"}, style="concrete-label"})
@@ -226,7 +258,7 @@ function render_main_gui(player, concrete_logistics, active_page)
         return a.priority < b.priority
     end)
     
-    local table = root.add({type="table", name="table", colspan = 8, style = "concrete-logistics-items-table"})
+    local table = root.add({type="table", name="table", colspan = 10, style = "concrete-logistics-items-table"})
     local max_index = math.min(active_page * 10, #global.concrete_data)
     for i = ((active_page - 1) * 10) + 1, max_index do
         local concrete_data = global.concrete_data[i]
@@ -236,20 +268,24 @@ function render_main_gui(player, concrete_logistics, active_page)
         if game.entity_prototypes[structure] then structure_name = game.entity_prototypes[structure].localised_name end
         
         table.add({type="label", caption={"gui.settings.priority", concrete_data.priority}})
-        table.add({type = "button", name="structure-" .. structure .. "-increase-priority", style = "concrete-logistics-up-arrow"})
         table.add({type = "button", name="structure-" .. structure .. "-decrease-priority", style = "concrete-logistics-down-arrow"})
+        table.add({type = "button", name="structure-" .. structure .. "-increase-priority", style = "concrete-logistics-up-arrow"})
         
         table.add({type="button", name="structure-dummy-icon-" .. structure, style="concrete-logistics-icon-" .. concrete_data.icon_name})
         table.add({type="label", style="structure-item-label", caption={"gui.settings.structure", structure_name}})
         
         table.add({type="button", name="structure-icon-" .. structure, style="concrete-logistics-icon-" .. concrete_data.concrete})
         
-        if concrete_data.radius == 1 then
+        if concrete_data.radius == 0 then
+            table.add({type="label", caption={"gui.settings.no_radius"}, style = "tile-radius-label"})
+        elseif concrete_data.radius == 1 then
             table.add({type="label", caption={"gui.settings.radius_singular", concrete_data.radius}, style = "tile-radius-label"})
         else
             table.add({type="label", caption={"gui.settings.radius", concrete_data.radius}, style = "tile-radius-label"})
         end
-        
+        table.add({type = "button", name="structure-radius-" .. structure .. "-increase-radius", style = "concrete-logistics-up-arrow"})
+        table.add({type = "button", name="structure-radius-" .. structure .. "-decrease-radius", style = "concrete-logistics-down-arrow"})
+
         table.add({type="label", caption={"gui.settings.shape.square"}, style = "tile-radius-label"})
     end
     
@@ -257,13 +293,15 @@ function render_main_gui(player, concrete_logistics, active_page)
     page_navigation.add({type="button", name="cl-page-left", style="button_style", caption = {"gui.settings.page_left"}})
     page_navigation.add({type="button", name="cl-page-number", style="button_style", caption = {"gui.settings.page", active_page, math.floor(#global.concrete_data / 10) + 1}})
     page_navigation.add({type="button", name="cl-page-right", style="button_style", caption = {"gui.settings.page_right"}})
-
+    
+    page_navigation.add({type="button", name="cl-exit-menu", style="button_style", caption = {"gui.settings.exit"}})
 end
 
 function close_gui(player_index, concrete_logistics)
     local player = game.players[player_index]
-    if player.gui.center["concrete_logistics_frame"] then
-        player.gui.center["concrete_logistics_frame"].destroy()
+    local gui_root = player.gui.center["concrete_logistics_frame"]
+    if gui_root then
+        gui_root.destroy()
     end
     concrete_logistics.gui_data[player_index] = nil
 end

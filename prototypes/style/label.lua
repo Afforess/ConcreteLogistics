@@ -18,7 +18,7 @@ data.raw["gui-style"].default["concrete-label"] =
 {
     type = "label_style",
     parent = "label_style",
-    width = 60,
+    width = 75,
     align = "center",
     font = "font-lb"
 }
@@ -26,8 +26,8 @@ data.raw["gui-style"].default["radius-label"] =
 {
     type = "label_style",
     parent = "label_style",
-    width = 65,
-    align = "center",
+    width = 90,
+    align = "left",
     font = "font-lb"
 }
 data.raw["gui-style"].default["shape-label"] =
@@ -70,5 +70,12 @@ data.raw["gui-style"].default["selection-instruction-label"] =
     type = "label_style",
     parent = "label_style",
     width = 300,
+    font = "font-lb"
+}
+data.raw["gui-style"].default["setting-item-label"] =
+{
+    type = "label_style",
+    parent = "label_style",
+    width = 235,
     font = "font-lb"
 }
