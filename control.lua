@@ -1,10 +1,12 @@
 require 'defines'
 require 'libs/concrete'
 require 'libs/circular_buffer'
+require 'libs/tile_cache'
 require 'libs/logger'
+require 'libs/cache_manager'
 require 'libs/settings_gui'
 
-script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity}, function(event)
+script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_entity}, function(event)
     local created_entity = event.created_entity
     if created_entity.name == "concrete-logistics" then
         created_entity.backer_name = ""
@@ -38,20 +40,38 @@ script.on_event({defines.events.on_built_entity, defines.on_robot_built_entity},
             if concrete_logistics.logistics.force == force then
                 if entity_inside_concrete_logistics_area(created_entity, concrete_logistics) then
                     circular_buffer.append(concrete_logistics.pending_entities, created_entity)
+                    reset_tile_cache(concrete_logistics)
                 end
             end
         end
     end
 end)
 
+script.on_event({defines.events.on_entity_died, defines.events.on_robot_pre_mined, defines.events.on_preplayer_mined_item}, function(event)
+    local entity = event.entity
+    local force = entity.force
+    for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
+        if concrete_logistics.logistics.force == force then
+            if entity_inside_concrete_logistics_area(entity, concrete_logistics) then
+                reset_tile_cache(concrete_logistics)
+            end
+        end
+    end
+end)
+
+
 script.on_event(defines.events.on_tick, function(event)
     if global.concrete_logistics_hubs then 
-        for i = #global.concrete_logistics_hubs, 1, -1 do
+        local num_logistics_hubs = #global.concrete_logistics_hubs
+        for i = num_logistics_hubs, 1, -1 do
             local data = global.concrete_logistics_hubs[i]
             if data.logistics ~= nil and data.logistics.valid then
-                update_concrete_logistics(data)
+                if num_logistics_hubs == 1 or (event.tick + i) % num_logistics_hubs == 0 then
+                    update_concrete_logistics(data)
+                end
                 if game.tick % 3600 == 0 then
                     prevent_pending_construction_death(data)
+                    log_cache_stats()
                 end
             else
                 table.remove(global.concrete_logistics_hubs, i)
@@ -138,17 +158,28 @@ function get_tile_name(x, y, surface, force, concrete_logistics)
     return {name = surface.get_tile(x, y).name}
 end
 
-function get_expected_tile_name(x, y, surface, force)
+function get_expected_tile_name(x, y, surface, force, concrete_logistics)
     local area = expand_area(tile_area(x, y, 1), get_largest_concrete_radius())
     local entities = surface.find_entities_filtered({area = area, force = force})
     local highest_priority_data = nil
     for _, entity in pairs(entities) do
         local concrete_data = concrete_data_for_entity(entity)
         if concrete_data ~= nil then
-            local concrete_area = expand_area(entity_area(entity), concrete_data.radius - 1)
+            local entity_area = entity_area(entity)
+            local radius = concrete_data.radius
+            if concrete_data.shape == "circle" then
+                radius = radius + (entity_area.right_bottom.x - entity_area.left_top.x) / 2
+                if radius == math.floor(radius) then
+                    radius = radius - 0.5
+                end
+            end
+            local concrete_area = expand_area(entity_area, radius)
             if inside_area(x, y, concrete_area) then
-                if highest_priority_data == nil or concrete_data.priority < highest_priority_data.priority then
-                    highest_priority_data = concrete_data
+                local radius_squared = (radius * radius)
+                if concrete_data.shape ~= "circle" or (dist_squared(entity.position, {x = x, y = y}) < radius_squared) then
+                    if highest_priority_data == nil or concrete_data.priority < highest_priority_data.priority then
+                        highest_priority_data = concrete_data
+                    end
                 end
             end
         end
@@ -168,7 +199,7 @@ function make_request_for_concrete_tile(x, y, surface, force, concrete_logistics
         end
         tile_name.tile_ghost.destroy()
     elseif tile_name.pending_concrete_node ~= nil then
-        pending_concrete_node.value = {concrete = expected_tile_name, position = position}
+        tile_name.pending_concrete_node.value = {concrete = expected_tile_name, position = position}
     else
         circular_buffer.append(concrete_logistics.pending_concrete, {concrete = expected_tile_name, position = position})
     end
@@ -181,7 +212,15 @@ function plan_concrete_for_entity(concrete_logistics, entity, second_pass)
     if concrete_data.radius <= 0 then
         return 
     end
-    local concrete_area = expand_area(entity_area(entity), math.max(0, concrete_data.radius - 1))
+    local entity_area = entity_area(entity)
+    local radius = concrete_data.radius
+    if concrete_data.shape == "circle" then
+        radius = radius + (entity_area.right_bottom.x - entity_area.left_top.x) / 2
+        if radius == math.floor(radius) then 
+            radius = radius - 0.5
+        end
+    end
+    local concrete_area = expand_area(entity_area, math.max(0, radius))
     local total_concrete_area = concrete_area
     if second_pass and concrete_logistics.fill_gaps then
         total_concrete_area = expand_area(concrete_area, 3)
@@ -194,13 +233,13 @@ function plan_concrete_for_entity(concrete_logistics, entity, second_pass)
                 if closest_cell ~= nil and closest_cell.is_in_construction_range(pos) then
                     if not second_pass or (inside_area(x, y, total_concrete_area) and not inside_area(x, y, concrete_area)) then
                         local tile_name = get_tile_name(x, y, surface, force, concrete_logistics)
-                        local expected_tile_name = get_expected_tile_name(x, y, surface, force)
+                        local expected_tile_name = get_cached_expected_tile_name(x, y, surface, force, concrete_logistics)
                         
                         -- fill gaps, if enabled
                         if second_pass and concrete_logistics.fill_gaps and expected_tile_name == nil then
                             expected_tile_name = "concrete"
                         end
-                        if tile_name.name ~= expected_tile_name then
+                        if tile_name.name ~= expected_tile_name and expected_tile_name ~= nil then
                             if string.find(tile_name.name, "concrete", 1, true) and concrete_logistics.deconstruction_enabled then
                                 circular_buffer.append(concrete_logistics.pending_deconstruction, {position = {x = x, y = y}})
                             end
@@ -244,14 +283,13 @@ function update_concrete_logistics(concrete_logistics)
         fulfill_deconstruction_request(concrete_logistics)
     elseif game.tick % 3 == 1 and concrete_logistics.pending_concrete.count > 0 then
         fulfill_construction_request(concrete_logistics)
-    elseif game.tick % 90 == 0 and concrete_logistics.pending_entities_second_pass.count > 0 then
-        Logger.log("Second pass count: " .. concrete_logistics.pending_entities_second_pass.count)
+    elseif game.tick % 21 == 0 and concrete_logistics.pending_entities_second_pass.count > 0 then
         if concrete_logistics.fill_gaps then
             examine_entities_to_fill_concrete_gaps(concrete_logistics)
         else
             concrete_logistics.pending_entities_second_pass = circular_buffer.new()
         end
-    elseif game.tick % 20 == 0 and concrete_logistics.pending_entities.count > 0 then
+    elseif game.tick % 7 == 0 and concrete_logistics.pending_entities.count > 0 then
         examine_nearby_entities_for_concrete_logistics(concrete_logistics, false)
     end
 end
@@ -288,7 +326,7 @@ end
 function fulfill_construction_request(concrete_logistics)
     local concrete_request = circular_buffer.pop(concrete_logistics.pending_concrete)
     local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(concrete_request.position)
-    if closest_cell ~= nil and closest_cell.is_in_construction_range(concrete_request.position) then
+    if concrete_request.concrete and closest_cell ~= nil and closest_cell.is_in_construction_range(concrete_request.position) then
         local data = {name = "tile-ghost", position = concrete_request.position, force = concrete_logistics.logistics.force, inner_name = concrete_request.concrete}
         local tile_ghost = concrete_logistics.logistics.surface.create_entity(data)
         if tile_ghost ~= nil then

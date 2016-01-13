@@ -23,49 +23,61 @@ script.on_event(defines.events.on_gui_click, function(event)
         Logger.log("No concrete logistics open")
         return
     end
+    local gui_data = open_concrete_logistics.gui_data
+    local player_gui_data = nil
+    local active_page = 1
+    if gui_data and gui_data[event.player_index] then
+        player_gui_data = gui_data[event.player_index]
+        if player_gui_data then
+             active_page = player_gui_data.active_page
+        end
+    end
 
     if gui_element.name == "cl-exit-menu" then
         close_gui(event.player_index, open_concrete_logistics)
     elseif gui_element.name == "cl_fill_gaps_checkbox" then
         open_concrete_logistics.fill_gaps = gui_element.state
+        reset_tile_cache(open_concrete_logistics)
     elseif gui_element.name == "deconstruction_checkbox" then
         open_concrete_logistics.deconstruction_enabled = gui_element.state
     elseif gui_element_name_contains(gui_element, "increase-priority") or gui_element_name_contains(gui_element, "decrease-priority") then
         if update_priority(gui_element, open_concrete_logistics) then
-            render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
+            render_main_gui(player, open_concrete_logistics, active_page)
         end
     elseif gui_element.name == "cl-page-left" then
         if open_concrete_logistics.gui_data[event.player_index].active_page > 1 then
-            local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             player_gui_data.active_page = player_gui_data.active_page - 1
             render_main_gui(player, open_concrete_logistics, player_gui_data.active_page)
         end
     elseif gui_element.name == "cl-page-right" then
         local max_page = math.floor(get_max_concrete_priority() / 10) + 1
         if open_concrete_logistics.gui_data[event.player_index].active_page < max_page then
-            local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             player_gui_data.active_page = player_gui_data.active_page + 1
             render_main_gui(player, open_concrete_logistics, player_gui_data.active_page)
         end
     elseif gui_element_name_contains(gui_element, "structure-icon") then
         local editing_structure = find_structure_selected_in_gui(gui_element.name)
         if editing_structure then
-            local player_gui_data = open_concrete_logistics.gui_data[event.player_index]
             if player_gui_data.editing_structure ~= editing_structure then
                 player_gui_data.editing_structure = editing_structure
                 update_entities_around_hub(open_concrete_logistics, concrete_data_for_type(editing_structure).types)
+                reset_tile_caches()
             end
             render_concrete_selection_gui(player, open_concrete_logistics, editing_structure)
         end
     elseif gui_element_name_contains(gui_element, "selection-concrete-icon") then
-        local structure = open_concrete_logistics.gui_data[event.player_index].editing_structure
+        local structure = player_gui_data.editing_structure
         if structure then
             concrete_data_for_type(structure).concrete = find_concrete_selected_in_gui(gui_element.name)
-            render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
+            render_main_gui(player, open_concrete_logistics, active_page)
         end
     elseif gui_element_name_contains(gui_element, "structure-radius-") then
         if update_concrete_radius(gui_element, open_concrete_logistics) then
-            render_main_gui(player, open_concrete_logistics, open_concrete_logistics.gui_data[event.player_index].active_page)
+            render_main_gui(player, open_concrete_logistics, active_page)
+        end
+    elseif gui_element_name_contains(gui_element, "structure-shape-") then
+        if toggle_concrete_shape(gui_element, open_concrete_logistics) then
+            render_main_gui(player, open_concrete_logistics, active_page)
         end
     end
 end)
@@ -76,7 +88,7 @@ end
 
 function lookup_concrete_logistics_for_player(player_index)
     for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
-        if concrete_logistics.gui_data[player_index] ~= nil then
+        if concrete_logistics.gui_data ~= nil and concrete_logistics.gui_data[player_index] ~= nil then
             return concrete_logistics
         end
     end
@@ -125,6 +137,21 @@ function open_gui(player_index, concrete_logistics)
     concrete_logistics.gui_data[player_index] = {active_page = 1}
 
     render_main_gui(player, concrete_logistics, 1)
+end
+
+function toggle_concrete_shape(gui_element, concrete_logistics)
+    local list = structure_for_each_concrete_data()
+    for structure, concrete_data in pairs(list) do
+        if gui_element.name == ("structure-shape-" .. structure) then
+            if concrete_data.shape == "circle" then
+                set_concrete_shape(concrete_logistics, concrete_data, "square")
+            else
+                set_concrete_shape(concrete_logistics, concrete_data, "circle")
+            end
+            return true
+        end
+    end
+    return false
 end
 
 function update_concrete_radius(gui_element, concrete_logistics)
@@ -286,7 +313,11 @@ function render_main_gui(player, concrete_logistics, active_page)
         table.add({type = "button", name="structure-radius-" .. structure .. "-increase-radius", style = "concrete-logistics-up-arrow"})
         table.add({type = "button", name="structure-radius-" .. structure .. "-decrease-radius", style = "concrete-logistics-down-arrow"})
 
-        table.add({type="label", caption={"gui.settings.shape.square"}, style = "tile-radius-label"})
+        if concrete_data.shape == "circle" then
+            table.add({type="button", name="structure-shape-" .. structure, caption={"gui.settings.shape.circle"}, style = "concrete-shape-button"})
+        else
+            table.add({type="button", name="structure-shape-" .. structure, caption={"gui.settings.shape.square"}, style = "concrete-shape-button"})
+        end
     end
     
     local page_navigation = root.add({type="flow", name="page_navigation", direction="horizontal", style="concrete-logistics-name-flow"})
