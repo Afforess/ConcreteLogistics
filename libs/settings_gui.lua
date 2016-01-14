@@ -38,6 +38,9 @@ script.on_event(defines.events.on_gui_click, function(event)
     elseif gui_element.name == "cl_fill_gaps_checkbox" then
         open_concrete_logistics.fill_gaps = gui_element.state
         reset_tile_cache(open_concrete_logistics)
+        for i = 1, #global.concrete_data do
+            table.insert(open_concrete_logistics.rescan_entity_types, global.concrete_data[i].types)
+        end
     elseif gui_element.name == "deconstruction_checkbox" then
         open_concrete_logistics.deconstruction_enabled = gui_element.state
     elseif gui_element_name_contains(gui_element, "increase-priority") or gui_element_name_contains(gui_element, "decrease-priority") then

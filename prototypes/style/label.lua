@@ -1,3 +1,12 @@
+data:extend(
+{
+  {
+    type = "font",
+    name = "font-lb",
+    from = "default-semibold",
+    size = 16
+  }
+})
 data.raw["gui-style"].default["priority-label"] =
 {
     type = "label_style",

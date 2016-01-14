@@ -14,26 +14,7 @@ script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_e
         if not global.concrete_logistics_hubs then global.concrete_logistics_hubs = {} end
         init_concrete_data()
 
-        -- logistics: the logistics tower entity
-        -- pending_concrete: list of tuples with concrete type and position, will be processed and converted into a tile_ghost entity
-        -- pending_entities: list containing entities to be examined for pending concrete requests
-        -- entities: list of examined entities that had concrete areas managed by the logistics tower
-        -- pending_construction: list tile_ghost entities that are pending arrival of a construction bot
-        local concrete_area = expand_area(entity_area(created_entity), created_entity.logistic_cell.construction_radius)
-        local data = {
-            logistics = created_entity,
-            concrete_area = concrete_area,
-            fill_gaps = false,
-            deconstruction_enabled = true,
-            pending_concrete = circular_buffer.new(),
-            pending_entities = circular_buffer.new(),
-            pending_entities_second_pass = circular_buffer.new(),
-            pending_deconstruction = circular_buffer.new(),
-            pending_construction = circular_buffer.new()
-        }
-        update_entities_around_hub(data, nil)
-        table.insert(global.concrete_logistics_hubs, data)
-        Logger.log("Concrete Logistics Hub created at " .. serpent.line(created_entity.position))
+        add_concrete_logistics_hub(created_entity)
     elseif global.concrete_logistics_hubs and concrete_data_for_entity(created_entity) ~= nil then
         local force = created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
@@ -46,6 +27,41 @@ script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_e
         end
     end
 end)
+
+function add_concrete_logistics_hub(entity)
+    local concrete_area = expand_area(entity_area(entity), entity.logistic_cell.construction_radius)
+    local data = {
+        -- logistics: the logistics tower entity
+        logistics = entity,
+        -- concrete_area: area that the logistics tower manages
+        concrete_area = concrete_area,
+        -- fill_gaps: Gaps between entities, but outside the strict radius of entity concrete radius is filled in with gray concrete
+        fill_gaps = false,
+        -- deconstruction_enabled: concrete is deconstructed before a different type of concrete is placed overtop
+        deconstruction_enabled = true,
+        -- pending_concrete: list of tuples with concrete type and position, will be processed and converted into a tile_ghost entity
+        pending_concrete = circular_buffer.new(),
+        -- pending_entities: list containing entities to be examined for concrete requests
+        pending_entities = circular_buffer.new(),
+        -- pending_entities: list containing entities to be examined for a second pass, to identify gaps in concrete, used only if fill_gaps is on
+        pending_entities_second_pass = circular_buffer.new(),
+        -- pending_deconstruction: list of positions that are pending a deconstruction request for the concrete
+        pending_deconstruction = circular_buffer.new(),
+        -- pending_construction: list of tile_ghost entities that are pending arrival of a construction bot
+        pending_construction = circular_buffer.new(),
+        
+        rescan_entity_types = {}
+    }
+    for i = 1, #global.concrete_data do
+        if global.concrete_data[i].priority < 5 then
+            update_entities_around_hub(data, global.concrete_data[i].types)
+        else
+            table.insert(data.rescan_entity_types, global.concrete_data[i].types)
+        end
+    end
+    table.insert(global.concrete_logistics_hubs, data)
+    Logger.log("Concrete Logistics Hub created at " .. serpent.line(entity.position))
+end
 
 script.on_event({defines.events.on_entity_died, defines.events.on_robot_pre_mined, defines.events.on_preplayer_mined_item}, function(event)
     local entity = event.entity
@@ -84,42 +100,43 @@ function update_entities_around_hub(concrete_logistics, entity_types)
     -- Add nearby entities to the queue
     local position = concrete_logistics.logistics.position
     local surface = concrete_logistics.logistics.surface
-    local entities = nil
-    if entity_types == nil then
-        entities = surface.find_entities_filtered({area = concrete_logistics.concrete_area, force = concrete_logistics.logistics.force})
-    else
-        entities = {}
-        for _, entity_type in pairs(entity_types) do
-            local list = surface.find_entities_filtered({area = concrete_logistics.concrete_area, type = entity_type, force = concrete_logistics.logistics.force})
-            for index, entity in pairs(list) do
-                table.insert(entities, entity)
-            end
+    local entities = {}
+    for _, entity_type in pairs(entity_types) do
+        local list = surface.find_entities_filtered({area = concrete_logistics.concrete_area, type = entity_type, force = concrete_logistics.logistics.force})
+        for index, entity in pairs(list) do
+            table.insert(entities, entity)
         end
     end
     -- sort entities by distance, not strictly nessecary, but aesthetically pleasing
-    local sorted_entities = {}
+    local all_entities = {}
+    local iter = circular_buffer.iterator(concrete_logistics.pending_entities)
+    while(iter.has_next()) do
+        local pending_entity = iter.next()
+        if pending_entity.valid then
+            table.insert(all_entities, {entity = pending_entity, pos = pending_entity.position})
+        end
+    end
     for _, nearby_entity in pairs(entities) do
         local data = concrete_data_for_entity(nearby_entity)
         if data ~= nil and entity_inside_concrete_logistics_area(nearby_entity, concrete_logistics) then
-            table.insert(sorted_entities, {pos = nearby_entity.position, entity = nearby_entity})
-        end
-    end
-    table.sort(sorted_entities, function(a, b)
-        return dist_squared(a.pos, position) < dist_squared(b.pos, position)
-    end)
-    for _, data in pairs(sorted_entities) do
-        local iter = circular_buffer.iterator(concrete_logistics.pending_entities)
-        local found = false
-        while(iter.has_next()) do
-            local pending_entity = iter.next()
-            if data.entity == pending_entity then
-                found = true
-                break
+            local already_in_list = false
+            for _, pending in pairs(all_entities) do
+                if pending.entity == nearby_entity then
+                    already_in_list = true
+                    break
+                end
+            end
+            if not already_in_list then
+                table.insert(all_entities, {pos = nearby_entity.position, entity = nearby_entity})
             end
         end
-        if not found then
-            circular_buffer.append(concrete_logistics.pending_entities, data.entity)
-        end
+    end        
+    table.sort(all_entities, function(a, b)
+        return dist_squared(a.pos, position) < dist_squared(b.pos, position)
+    end)
+    circular_buffer.reset(concrete_logistics.pending_entities)
+    for _, data in pairs(all_entities) do
+        circular_buffer.append(concrete_logistics.pending_entities, data.entity)
     end
 end
 
@@ -132,7 +149,7 @@ end
 function is_valid_tile_for_concrete(x, y, surface)
     local adjacent = {{0, 0}, {1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
     for _, tuple in pairs(adjacent) do
-        if surface.get_tile(x + tuple[1], y + tuple[2]).name == "water" then
+        if string.find(surface.get_tile(x + tuple[1], y + tuple[2]).name, "water", 1, true) then
             return false
         end
     end
@@ -240,10 +257,15 @@ function plan_concrete_for_entity(concrete_logistics, entity, second_pass)
                             expected_tile_name = "concrete"
                         end
                         if tile_name.name ~= expected_tile_name and expected_tile_name ~= nil then
-                            if string.find(tile_name.name, "concrete", 1, true) and concrete_logistics.deconstruction_enabled then
-                                circular_buffer.append(concrete_logistics.pending_deconstruction, {position = {x = x, y = y}})
+                            local is_concrete = string.find(tile_name.name, "concrete", 1, true)
+                            if second_pass and is_concrete then
+                                -- do nothing! second_pass to fill gaps should not erase player-placed concrete
+                            else
+                                if is_concrete and concrete_logistics.deconstruction_enabled then
+                                    circular_buffer.append(concrete_logistics.pending_deconstruction, {position = {x = x, y = y}})
+                                end
+                                make_request_for_concrete_tile(x, y, surface, force, concrete_logistics, tile_name, expected_tile_name)
                             end
-                            make_request_for_concrete_tile(x, y, surface, force, concrete_logistics, tile_name, expected_tile_name)
                         end
                     end
                 end
@@ -266,32 +288,49 @@ end
 -- OR fulfills one pending_concrete construction request per tick, unless the the number of pending_construction tile_ghosts exceeds the max allowed
 -- OR examines one nearby entity every 3 ticks for nearby entities and pending concrete tile_ghosts
 function update_concrete_logistics(concrete_logistics)
-    if concrete_logistics.pending_deconstruction == nil then
-        concrete_logistics.pending_deconstruction = circular_buffer.new()
-        concrete_logistics.pending_entities_second_pass = circular_buffer.new()
+    if concrete_logistics.rescan_entity_types == nil then
+        concrete_logistics.rescan_entity_types = {}
     end
-    
     if concrete_logistics.logistics.logistic_network == nil or concrete_logistics.logistics.logistic_network.all_construction_robots == 0 then
-        if game.tick % 3600 == 0 then
+        if tick_interval_execute(concrete_logistics, "warn_no_construction_bots", 3600) then
             warn_no_construction_bots(concrete_logistics)
         end
     elseif concrete_logistics.pending_construction.count >= max_pending_construction(concrete_logistics) then
-        if game.tick % 300 == 0 then
+        if tick_interval_execute(concrete_logistics, "prevent_pending_construction_death", 600) then
             prevent_pending_construction_death(concrete_logistics)
         end
-    elseif game.tick % 3 == 1 and concrete_logistics.pending_deconstruction.count > 0 then
+    elseif tick_interval_execute(concrete_logistics, "fulfill_deconstruction_request", 3) and concrete_logistics.pending_deconstruction.count > 0 then
         fulfill_deconstruction_request(concrete_logistics)
-    elseif game.tick % 3 == 1 and concrete_logistics.pending_concrete.count > 0 then
+    elseif tick_interval_execute(concrete_logistics, "fulfill_construction_request", 3) and concrete_logistics.pending_concrete.count > 0 then
         fulfill_construction_request(concrete_logistics)
-    elseif game.tick % 21 == 0 and concrete_logistics.pending_entities_second_pass.count > 0 then
+    elseif tick_interval_execute(concrete_logistics, "fill_concrete_gaps", 42) and concrete_logistics.pending_entities_second_pass.count > 0 then
         if concrete_logistics.fill_gaps then
             examine_entities_to_fill_concrete_gaps(concrete_logistics)
         else
             concrete_logistics.pending_entities_second_pass = circular_buffer.new()
         end
-    elseif game.tick % 7 == 0 and concrete_logistics.pending_entities.count > 0 then
+    elseif tick_interval_execute(concrete_logistics, "examine_nearby_entities", 14) and concrete_logistics.pending_entities.count > 0 then
         examine_nearby_entities_for_concrete_logistics(concrete_logistics, false)
+    elseif tick_interval_execute(concrete_logistics, "rescan_entity_types", 3600) and #concrete_logistics.rescan_entity_types > 0 then
+        local types = table.remove(concrete_logistics.rescan_entity_types, 1)
+        update_entities_around_hub(concrete_logistics, types)
     end
+end
+
+function tick_interval_execute(concrete_logistics, key, interval)
+    if concrete_logistics.tick_timers == nil then
+        concrete_logistics.tick_timers = { }
+    end
+    local data = concrete_logistics.tick_timers[key]
+    if data == nil then
+        data = { last_tick = game.tick, next_tick = game.tick + interval }
+        concrete_logistics.tick_timers[key] = data
+    end
+    if game.tick >= data.next_tick then
+        concrete_logistics.tick_timers[key] = { last_tick = game.tick, next_tick = game.tick + interval }
+        return true
+    end
+    return false
 end
 
 function examine_nearby_entities_for_concrete_logistics(concrete_logistics)
