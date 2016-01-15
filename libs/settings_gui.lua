@@ -13,6 +13,9 @@ script.on_load(function()
 end)
 
 script.on_event(defines.events.on_gui_click, function(event)
+    if not global.concrete_logistics_hubs then
+        return
+    end
     Logger.log("Element clicked: " .. event.element.name)
 
     local player = game.players[event.player_index]

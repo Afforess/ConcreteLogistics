@@ -64,12 +64,14 @@ function add_concrete_logistics_hub(entity)
 end
 
 script.on_event({defines.events.on_entity_died, defines.events.on_robot_pre_mined, defines.events.on_preplayer_mined_item}, function(event)
-    local entity = event.entity
-    local force = entity.force
-    for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
-        if concrete_logistics.logistics.force == force then
-            if entity_inside_concrete_logistics_area(entity, concrete_logistics) then
-                reset_tile_cache(concrete_logistics)
+    if global.concrete_logistics_hubs then
+        local entity = event.entity
+        local force = entity.force
+        for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
+            if concrete_logistics.logistics.force == force then
+                if entity_inside_concrete_logistics_area(entity, concrete_logistics) then
+                    reset_tile_cache(concrete_logistics)
+                end
             end
         end
     end
