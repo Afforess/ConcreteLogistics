@@ -14,7 +14,13 @@ script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_e
         if not global.concrete_logistics_hubs then global.concrete_logistics_hubs = {} end
         init_concrete_data()
 
-        add_concrete_logistics_hub(created_entity)
+        local hub = add_concrete_logistics_hub(created_entity)
+        if show_first_time_player_info(event) then
+            first_time_player_information(event.player_index, hub)
+        elseif event.player_index then
+            render_main_gui(game.players[event.player_index], hub, 1)
+        end
+
     elseif global.concrete_logistics_hubs and concrete_data_for_entity(created_entity) ~= nil then
         local force = created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
@@ -27,6 +33,23 @@ script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_e
         end
     end
 end)
+
+function show_first_time_player_info(event)
+    if not global.player_notices then global.player_notices = {} end
+    return event.player_index and global.player_notices[event.player_index] == nil
+end
+
+function first_time_player_information(player_index, hub)
+    local player = game.players[player_index]
+    local root = player.gui.center.add({type="frame", direction="vertical", name="concrete_logistics_frame", caption={"gui.players.first_time_notice.title"}})
+    local text_flow = root.add({type="flow", direction="vertical"})
+    for i = 1, 7 do
+        text_flow.add({type="label", caption={"gui.players.first_time_notice.congrats.line" .. i}, style="cl-tutorial-label"})
+    end
+    text_flow.add({type="button", name="cl-congrats-menu", style="button_style", caption = {"gui.settings.exit"}})
+    player.character.insert{name = "wrenchfu-wrench", count = 1}
+    global.player_notices[player_index] = hub
+end
 
 function add_concrete_logistics_hub(entity)
     local concrete_area = expand_area(entity_area(entity), entity.logistic_cell.construction_radius)
@@ -61,6 +84,7 @@ function add_concrete_logistics_hub(entity)
     end
     table.insert(global.concrete_logistics_hubs, data)
     Logger.log("Concrete Logistics Hub created at " .. serpent.line(entity.position))
+    return data
 end
 
 script.on_event({defines.events.on_entity_died, defines.events.on_robot_pre_mined, defines.events.on_preplayer_mined_item}, function(event)
@@ -250,24 +274,22 @@ function plan_concrete_for_entity(concrete_logistics, entity, second_pass)
                 local pos = {x = math.floor(x), y = math.floor(y)}
                 local closest_cell = concrete_logistics.logistics.logistic_network.find_cell_closest_to(pos)
                 if closest_cell ~= nil and closest_cell.is_in_construction_range(pos) then
-                    if not second_pass or (inside_area(x, y, total_concrete_area) and not inside_area(x, y, concrete_area)) then
-                        local tile_name = get_tile_name(x, y, surface, force, concrete_logistics)
-                        local expected_tile_name = get_cached_expected_tile_name(x, y, surface, force, concrete_logistics)
-                        
-                        -- fill gaps, if enabled
-                        if second_pass and concrete_logistics.fill_gaps and expected_tile_name == nil then
-                            expected_tile_name = "concrete"
-                        end
-                        if tile_name.name ~= expected_tile_name and expected_tile_name ~= nil then
-                            local is_concrete = string.find(tile_name.name, "concrete", 1, true)
-                            if second_pass and is_concrete then
-                                -- do nothing! second_pass to fill gaps should not erase player-placed concrete
-                            else
-                                if is_concrete and concrete_logistics.deconstruction_enabled then
-                                    circular_buffer.append(concrete_logistics.pending_deconstruction, {position = {x = x, y = y}})
-                                end
-                                make_request_for_concrete_tile(x, y, surface, force, concrete_logistics, tile_name, expected_tile_name)
+                    local tile_name = get_tile_name(x, y, surface, force, concrete_logistics)
+                    local expected_tile_name = get_cached_expected_tile_name(x, y, surface, force, concrete_logistics)
+                    
+                    -- fill gaps, if enabled
+                    if second_pass and concrete_logistics.fill_gaps and expected_tile_name == nil then
+                        expected_tile_name = "concrete"
+                    end
+                    if tile_name.name ~= expected_tile_name and expected_tile_name ~= nil then
+                        local is_concrete = string.find(tile_name.name, "concrete", 1, true)
+                        if second_pass and is_concrete then
+                            -- do nothing! second_pass to fill gaps should not erase player-placed concrete
+                        else
+                            if is_concrete and concrete_logistics.deconstruction_enabled then
+                                circular_buffer.append(concrete_logistics.pending_deconstruction, {position = {x = x, y = y}})
                             end
+                            make_request_for_concrete_tile(x, y, surface, force, concrete_logistics, tile_name, expected_tile_name)
                         end
                     end
                 end
@@ -317,6 +339,19 @@ function update_concrete_logistics(concrete_logistics)
         local types = table.remove(concrete_logistics.rescan_entity_types, 1)
         update_entities_around_hub(concrete_logistics, types)
     end
+end
+
+function does_concrete_logistics_need_update(concrete_logistics)
+    if concrete_logistics.pending_construction.count > 0 or concrete_logistics.pending_deconstruction.count > 0 then
+        return true
+    end
+    if concrete_logistics.pending_concrete.count > 0 or concrete_logistics.pending_entities_second_pass.count > 0 then
+        return true
+    end
+    if concrete_logistics.pending_entities.count > 0 or #concrete_logistics.rescan_entity_types > 0 then
+        return true
+    end
+    return false
 end
 
 function tick_interval_execute(concrete_logistics, key, interval)

@@ -88,3 +88,13 @@ data.raw["gui-style"].default["setting-item-label"] =
     width = 235,
     font = "font-lb"
 }
+data.raw["gui-style"].default["cl-tutorial-label"] =
+{
+    type = "label_style",
+    parent = "label_style",
+    width = 380,
+    height = 14,
+    font = "font-lb",
+    top_padding = 1,
+    bottom_padding = 1,
+}

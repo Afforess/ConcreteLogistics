@@ -21,6 +21,17 @@ script.on_event(defines.events.on_gui_click, function(event)
     local player = game.players[event.player_index]
     local gui_element = event.element
 
+    if gui_element.name == "cl-exit-menu" then
+        close_gui(event.player_index, open_concrete_logistics)
+        return
+    end
+    
+    if gui_element.name == "cl-congrats-menu" then
+        close_gui(event.player_index, open_concrete_logistics)
+        render_main_gui(player, global.player_notices[event.player_index], 1)
+        global.player_notices[event.player_index] = true
+    end
+
     local open_concrete_logistics = lookup_concrete_logistics_for_player(event.player_index)
     if not open_concrete_logistics then
         Logger.log("No concrete logistics open")
@@ -36,9 +47,7 @@ script.on_event(defines.events.on_gui_click, function(event)
         end
     end
 
-    if gui_element.name == "cl-exit-menu" then
-        close_gui(event.player_index, open_concrete_logistics)
-    elseif gui_element.name == "cl_fill_gaps_checkbox" then
+    if gui_element.name == "cl_fill_gaps_checkbox" then
         open_concrete_logistics.fill_gaps = gui_element.state
         reset_tile_cache(open_concrete_logistics)
         for i = 1, #global.concrete_data do
@@ -103,20 +112,20 @@ end
 
 local interface = {}
 
-function interface.show_my_gui(player_index, entity_name, position, surface_name)
+function interface.show_my_gui(player_index, entity_name, position)
     local player = game.players[player_index]
     if player ~= nil and player.valid and player.connected then
-        local concrete_logistics = get_concrete_logistics(position, surface_name)
+        local concrete_logistics = get_concrete_logistics(position, player.surface)
         if concrete_logistics ~= nil then
             open_gui(player_index, concrete_logistics)
         end
     end
 end
 
-function interface.hide_my_gui(player_index, entity_name, position, surface_name)
+function interface.hide_my_gui(player_index, entity_name, position)
     local player = game.players[player_index]
     if player ~= nil and player.valid and player.connected then
-        local concrete_logistics = get_concrete_logistics(position, surface_name)
+        local concrete_logistics = get_concrete_logistics(position, player.surface)
         if concrete_logistics ~= nil then
             close_gui(player_index, concrete_logistics)
         end
@@ -125,8 +134,7 @@ end
 
 remote.add_interface("concrete-logistics-api", interface)
 
-function get_concrete_logistics(position, surface_name)
-    local surface = game.surfaces[surface_name]
+function get_concrete_logistics(position, surface)
     local entity = surface.find_entity("concrete-logistics", position)
     for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
         if concrete_logistics.logistics == entity then
@@ -265,8 +273,20 @@ function render_main_gui(player, concrete_logistics, active_page)
     if player.gui.center["concrete_logistics_frame"] then
         player.gui.center["concrete_logistics_frame"].destroy()
     end
+    
+    local title_caption = {"gui.settings.status"}
+    if does_concrete_logistics_need_update(concrete_logistics) then
+        table.insert(title_caption, "Active Construction")
+    else
+        table.insert(title_caption, "Construction Complete")
+    end
 
-    local root = player.gui.center.add({type="frame", direction="vertical", name="concrete_logistics_frame", caption={"gui.settings"}})
+    local root = player.gui.center.add({type="frame", direction="vertical", name="concrete_logistics_frame", caption=title_caption})
+    if does_concrete_logistics_need_update(concrete_logistics) then
+        root.style.font_color = { r = 255, g = 255, b = 0 }
+    else
+        root.style.font_color = { r = 0, g = 255, b = 0 }
+    end
     
     local settings_flow = root.add({type="flow", name="settings_flow", direction="vertical"})
 
