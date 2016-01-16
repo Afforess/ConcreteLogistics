@@ -222,7 +222,7 @@ function decrease_priority(concrete_data, concrete_logistics)
     return false
 end
 
-local concrete_types = {"concrete-red", "concrete-orange", "concrete-yellow", "concrete-green", "concrete-cyan",
+local concrete_types = {"concrete", "concrete-red", "concrete-orange", "concrete-yellow", "concrete-green", "concrete-cyan",
                         "concrete-blue", "concrete-purple", "concrete-magenta", "concrete-white", "concrete-black",
                         "concrete-hazard-left", "concrete-hazard-right", "concrete-fire-left", "concrete-fire-right"}
 
