@@ -168,8 +168,11 @@ end
 
 
 function entity_inside_concrete_logistics_area(entity, concrete_logistics)
-    local concrete_area = concrete_logistics.concrete_area
-    return area_inside(concrete_area, entity_area(entity))
+    if entity.surface == concrete_logistics.logistics.surface then
+        local concrete_area = concrete_logistics.concrete_area
+        return area_inside(concrete_area, entity_area(entity))
+    end
+    return false
 end
 
 function is_valid_tile_for_concrete(x, y, surface)
