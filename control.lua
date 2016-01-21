@@ -24,7 +24,7 @@ script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_e
     elseif global.concrete_logistics_hubs and concrete_data_for_entity(created_entity) ~= nil then
         local force = created_entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
-            if concrete_logistics.logistics.force == force then
+            if concrete_logistics.logistics.valid and concrete_logistics.logistics.force == force then
                 if entity_inside_concrete_logistics_area(created_entity, concrete_logistics) then
                     circular_buffer.append(concrete_logistics.pending_entities, created_entity)
                     reset_tile_cache(concrete_logistics)
@@ -92,7 +92,7 @@ script.on_event({defines.events.on_entity_died, defines.events.on_robot_pre_mine
         local entity = event.entity
         local force = entity.force
         for _, concrete_logistics in pairs(global.concrete_logistics_hubs) do
-            if concrete_logistics.logistics.force == force then
+            if concrete_logistics.logistics.valid and concrete_logistics.logistics.force == force then
                 if entity_inside_concrete_logistics_area(entity, concrete_logistics) then
                     reset_tile_cache(concrete_logistics)
                 end
