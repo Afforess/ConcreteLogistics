@@ -19,17 +19,13 @@ data:extend({
         },
         recharge_minimum = "5MJ",
         energy_usage = "100kW",
-        charging_energy = "400kW",
+        charging_energy = "0kW",
         logistics_radius = 0,
         construction_radius = 50,
         charge_approach_distance = 5,
         robot_slots_count = 0,
         material_slots_count = 0,
         stationing_offset = {0, 0},
-        charging_offsets =
-        {
-            {0, -1.7},
-        },
         base =
         {
             filename = "__ConcreteLogistics__/graphics/entity/concrete-logistics.png",

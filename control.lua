@@ -10,7 +10,7 @@ script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_e
     local created_entity = event.created_entity
     if created_entity.name == "concrete-logistics" then
         created_entity.backer_name = ""
-        
+
         if not global.concrete_logistics_hubs then global.concrete_logistics_hubs = {} end
         init_concrete_data()
 
@@ -72,7 +72,7 @@ function add_concrete_logistics_hub(entity)
         pending_deconstruction = circular_buffer.new(),
         -- pending_construction: list of tile_ghost entities that are pending arrival of a construction bot
         pending_construction = circular_buffer.new(),
-        
+
         rescan_entity_types = {}
     }
     for i = 1, #global.concrete_data do
@@ -103,7 +103,7 @@ end)
 
 
 script.on_event(defines.events.on_tick, function(event)
-    if global.concrete_logistics_hubs then 
+    if global.concrete_logistics_hubs then
         local num_logistics_hubs = #global.concrete_logistics_hubs
         for i = num_logistics_hubs, 1, -1 do
             local data = global.concrete_logistics_hubs[i]
@@ -156,7 +156,7 @@ function update_entities_around_hub(concrete_logistics, entity_types)
                 table.insert(all_entities, {pos = nearby_entity.position, entity = nearby_entity})
             end
         end
-    end        
+    end
     table.sort(all_entities, function(a, b)
         return dist_squared(a.pos, position) < dist_squared(b.pos, position)
     end)
@@ -192,7 +192,7 @@ function get_tile_name(x, y, surface, force, concrete_logistics)
     end
     local tx = math.floor(x)
     local ty = math.floor(y)
-    
+
     local iter = circular_buffer.iterator(concrete_logistics.pending_concrete)
     while(iter.has_next()) do
         local node = iter.next_node()
@@ -256,20 +256,20 @@ function plan_concrete_for_entity(concrete_logistics, entity, second_pass)
     local force = entity.force
     local concrete_data = concrete_data_for_entity(entity)
     if concrete_data.radius <= 0 then
-        return 
+        return
     end
     local entity_area = entity_area(entity)
     local radius = concrete_data.radius
     if concrete_data.shape == "circle" then
         radius = radius + (entity_area.right_bottom.x - entity_area.left_top.x) / 2
-        if radius == math.floor(radius) then 
+        if radius == math.floor(radius) then
             radius = radius - 0.5
         end
     end
     local concrete_area = expand_area(entity_area, math.max(0, radius))
     local total_concrete_area = concrete_area
     if second_pass and concrete_logistics.fill_gaps then
-        total_concrete_area = expand_area(concrete_area, 3)
+        total_concrete_area = expand_area(concrete_area, 4)
     end
     for x = total_concrete_area.left_top.x, total_concrete_area.right_bottom.x - 1, 1 do
         for y = total_concrete_area.left_top.y, total_concrete_area.right_bottom.y - 1, 1 do
@@ -279,7 +279,7 @@ function plan_concrete_for_entity(concrete_logistics, entity, second_pass)
                 if closest_cell ~= nil and closest_cell.is_in_construction_range(pos) then
                     local tile_name = get_tile_name(x, y, surface, force, concrete_logistics)
                     local expected_tile_name = get_cached_expected_tile_name(x, y, surface, force, concrete_logistics)
-                    
+
                     -- fill gaps, if enabled
                     if second_pass and concrete_logistics.fill_gaps and expected_tile_name == nil then
                         expected_tile_name = "concrete"
