@@ -421,7 +421,8 @@ function warn_no_construction_bots(concrete_logistics)
     local force = concrete_logistics.logistics.force
     for _, player in pairs(game.players) do
         if player.valid and player.connected and player.force == force then
-            player.print("No construction bots within a concrete logistics hub network!")
+            local pos = math.floor(concrete_logistics.logistics.position.x) .. ", " .. math.floor(concrete_logistics.logistics.position.y)
+            player.print("No construction bots within the concrete network at (" .. pos .. ")!")
         end
     end
 end
